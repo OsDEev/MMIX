@@ -4,6 +4,7 @@
 #include <kbd.h>
 #include <lapic.h>
 #include <libk.h>
+#include <mouse.h>
 #include <msr.h>
 #include <panic.h>
 #include <pmap.h>
@@ -169,6 +170,8 @@ void isr_handler(uint64_t int_no, uint64_t err_code, struct interrupt_frame *fra
             g_pit_ticks++;
         } else if (int_no == IRQ_BASE + 1) { /* PS/2 keyboard */
             kbd_interrupt();
+        } else if (int_no == IRQ_BASE + 12) { /* PS/2 mouse */
+            mouse_interrupt();
         }
     }
 }

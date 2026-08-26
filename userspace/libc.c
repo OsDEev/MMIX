@@ -201,6 +201,24 @@ void gfx_clear(uint32_t color) {
     raw_syscall6(SYS_GFX, 4, (long)color, 0, 0, 0, 0);
 }
 
+void gfx_set_cursor(int x, int y, int prev_x, int prev_y, uint32_t color) {
+    raw_syscall6(SYS_GFX, 7, x, y, prev_x, prev_y, (long)color);
+}
+
+volatile void *gfx_fb_mmap(int target_va) {
+    return (volatile void *)raw_syscall6(SYS_GFX, 8, (long)target_va, 0, 0, 0, 0);
+}
+
+int gfx_get_pitch(void) {
+    int pitch = 0;
+    raw_syscall6(SYS_GFX, 9, 0, 0, (long)&pitch, 0, 0);
+    return pitch;
+}
+
+int mouse_read(struct mmix_mouse *out) {
+    return (int)raw_syscall1(SYS_MOUSE, (long)out);
+}
+
 /* --- memory (malloc over anonymous mmap) --------------------------------- */
 
 static char *mp_base = 0, *mp_ptr = 0, *mp_end = 0;

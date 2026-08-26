@@ -18,6 +18,7 @@
 #include <tty.h>
 #include <chardev.h>
 #include <vfs.h>
+#include <mouse.h>
 
 #include "elf.h"
 
@@ -27,7 +28,7 @@ __attribute__((used, section(".limine_requests")))
 static volatile LIMINE_BASE_REVISION(3);
 
 __attribute__((used, section(".limine_requests")))
-static volatile struct limine_framebuffer_request framebuffer_request = {
+volatile struct limine_framebuffer_request framebuffer_request = {
     .id = LIMINE_FRAMEBUFFER_REQUEST,
     .revision = 0
 };
@@ -69,6 +70,9 @@ void _start(void) {
     } else {
         kprintf("[WARN] No framebuffer.\n");
     }
+
+    /* PS/2 mouse (after TTY so we know screen dimensions) */
+    mouse_init();
 
     /* HHDM & memory map */
     if (hhdm_request.response == NULL) hcf();

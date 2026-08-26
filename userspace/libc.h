@@ -4,6 +4,13 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#ifndef MYUNIX_BOOL
+#define MYUNIX_BOOL
+typedef int bool;
+#define true 1
+#define false 0
+#endif
+
 /* Syscall numbers (keep in sync with kernel/src/sys/syscall.h) */
 #define SYS_EXIT   0
 #define SYS_WRITE  1
@@ -35,6 +42,7 @@
 #define SYS_RUDO_WAIT 31
 #define SYS_SETUID 32
 #define SYS_GETUID 33
+#define SYS_MOUSE  34
 #define SYS_SETPGID 22
 #define SYS_GETPGID 23
 #define SYS_SETSID 24
@@ -111,6 +119,19 @@ void gfx_circle(int cx, int cy, int r, uint32_t color);
 void gfx_fill_circle(int cx, int cy, int r, uint32_t color);
 void gfx_rect(int x, int y, int w, int h, uint32_t color);
 void gfx_clear(uint32_t color);
+void gfx_set_cursor(int x, int y, int prev_x, int prev_y, uint32_t color);
+volatile void *gfx_fb_mmap(int target_va);
+int gfx_get_pitch(void);
+
+/* Mouse */
+struct mmix_mouse {
+    int32_t x;
+    int32_t y;
+    int32_t dx;
+    int32_t dy;
+    uint8_t buttons;
+};
+int mouse_read(struct mmix_mouse *out);
 
 /* Memory */
 void *malloc(size_t n);

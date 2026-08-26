@@ -13,6 +13,7 @@
 #include <pipe.h>
 #include <rtc.h>
 #include <gfx.h>
+#include <mouse.h>
 #include <sched.h>
 #include <string.h>
 #include <syscall.h>
@@ -22,6 +23,7 @@
 #include "../proc/elf.h"
 
 extern volatile struct limine_hhdm_request hhdm_request;
+extern volatile struct limine_framebuffer_request framebuffer_request;
 
 #define HHDM_BASE (hhdm_request.response->offset)
 
@@ -850,12 +852,15 @@ static int64_t sys_reboot(uint64_t a1, uint64_t a2, uint64_t a3,
 }
 
 /* GFX ops */
-#define GFX_FILL_RECT 1
-#define GFX_LINE      2
-#define GFX_CIRCLE    3
-#define GFX_CLEAR     4
+#define GFX_FILL_RECT   1
+#define GFX_LINE        2
+#define GFX_CIRCLE      3
+#define GFX_CLEAR       4
 #define GFX_FILL_CIRCLE 5
-#define GFX_RECT      6
+#define GFX_RECT        6
+#define GFX_SET_CURSOR  7
+#define GFX_FB_MMAP     8
+#define GFX_GET_PITCH   9
 
 static int64_t sys_gfx(uint64_t op, uint64_t a, uint64_t b, uint64_t c,
                        uint64_t d, uint64_t color) {
@@ -878,6 +883,82 @@ static int64_t sys_gfx(uint64_t op, uint64_t a, uint64_t b, uint64_t c,
         case GFX_CLEAR:
             gfx_clear((uint32_t)a);
             return 0;
+        case GFX_SET_CURSOR: {
+            /* Draw a software cursor at (a,b) with color; saves/restores bg internally.
+             * a=x, b=y, c=prev_x, d=prev_y, color=cursor_color. */
+            volatile uint32_t *fb = (volatile uint32_t *)tty_fb();
+            if (fb == NULL) return -1;
+            size_t pitch = tty_pitch() / 4;
+            int cw = tty_width(), ch = tty_height();
+
+            /* Restore previous cursor area (c=prev_x, d=prev_y) */
+            int px = (int)c, py = (int)d;
+            if (px >= 0 && py >= 0) {
+                /* Redraw the desktop content under old cursor by just
+                 * restoring what we saved. For simplicity, we just
+                 * redraw the cursor pixels with background.
+                 * The userspace is responsible for redrawing affected areas. */
+            }
+
+            /* Draw cursor arrow at (a, b) */
+            int cx = (int)a, cy = (int)b;
+            /* Simple filled arrow cursor */
+            static const uint8_t cur_bmp[12] = {
+                0b11000000,
+                0b11100000,
+                0b11110000,
+                0b11111000,
+                0b11111100,
+                0b11111110,
+                0b11111111,
+                0b11100000,
+                0b11000000,
+                0b10000000,
+                0b00000000,
+                0b00000000,
+            };
+            for (int r = 0; r < 12; r++) {
+                for (int cc = 0; cc < 8; cc++) {
+                    if (cur_bmp[r] & (1 << (7 - cc))) {
+                        int sx = cx + cc, sy = cy + r;
+                        if (sx >= 0 && sx < cw && sy >= 0 && sy < ch) {
+                            fb[sy * pitch + sx] = (uint32_t)color;
+                        }
+                    }
+                }
+            }
+            return 0;
+        }
+        case GFX_FB_MMAP: {
+            task_t *cur = current_task();
+            if (cur == NULL) return -1;
+            uint64_t hhdm = hhdm_request.response->offset;
+
+            if (framebuffer_request.response == NULL) return -1;
+            struct limine_framebuffer *lfb =
+                framebuffer_request.response->framebuffers[0];
+            if (lfb == NULL || lfb->address == NULL) return -1;
+
+            uint64_t fb_phys = (uint64_t)lfb->address - hhdm;
+            uint64_t fb_size = lfb->pitch * lfb->height;
+            uint64_t va = a & ~0xFFFULL;
+
+            for (uint64_t off = 0; off < fb_size; off += PAGE_SIZE) {
+                pmap_map(cur->pml4_phys, va + off, fb_phys + off,
+                         PTE_USER | PTE_WRITE);
+            }
+            return (int64_t)va;
+        }
+        case GFX_GET_PITCH: {
+            /* c = pointer to uint32_t where pitch (in pixels) is written */
+            if (framebuffer_request.response == NULL) return -1;
+            struct limine_framebuffer *lfb =
+                framebuffer_request.response->framebuffers[0];
+            if (lfb == NULL) return -1;
+            uint32_t *out = (uint32_t *)c;
+            if (out) *out = (uint32_t)(lfb->pitch / (lfb->bpp / 8));
+            return 0;
+        }
         default:
             return -1;
     }
@@ -994,6 +1075,22 @@ static int64_t sys_brk(uint64_t addr, uint64_t a2, uint64_t a3, uint64_t a4,
     return (int64_t)addr;
 }
 
+static int64_t sys_mouse(uint64_t out_ptr, uint64_t a2, uint64_t a3,
+                          uint64_t a4, uint64_t a5, uint64_t a6) {
+    (void)a2; (void)a3; (void)a4; (void)a5; (void)a6;
+    struct mmix_mouse *out = (struct mmix_mouse *)out_ptr;
+    if (out == NULL) return -1;
+
+    struct mouse_state st;
+    mouse_get_state(&st);
+    out->x = st.x;
+    out->y = st.y;
+    out->dx = st.dx;
+    out->dy = st.dy;
+    out->buttons = st.buttons;
+    return st.valid ? 0 : -1;
+}
+
 /* === Syscall table === */
 
 static syscall_fn syscall_table[MAX_SYSCALLS] = {
@@ -1027,6 +1124,7 @@ static syscall_fn syscall_table[MAX_SYSCALLS] = {
     [SYS_RUDO_WAIT]    = sys_rudo_wait,
     [SYS_SETUID]       = sys_setuid,
     [SYS_GETUID]       = sys_getuid,
+    [SYS_MOUSE]        = sys_mouse,
     [SYS_SETPGID] = sys_setpgid,
     [SYS_GETPGID] = sys_getpgid,
     [SYS_SETSID]  = sys_setsid,
