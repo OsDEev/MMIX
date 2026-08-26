@@ -13,3 +13,5 @@ compile_commands.json
 
 # Regeneratable initrd (source lives in initrd_root/, built by `make initrd`)
 /boot/initrd.tar
+ext2_disk.img
+/tmp
