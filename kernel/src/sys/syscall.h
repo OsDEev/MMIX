@@ -37,6 +37,7 @@
 #define SYS_RUDO_REQUEST 30
 #define SYS_RUDO_WAIT    31
 #define SYS_SETUID       32
+#define SYS_GETUID       33
 
 #define MAX_SYSCALLS    64
 
@@ -48,7 +49,8 @@ struct mmix_timeval {
 };
 
 /* rudo ops */
-#define RUDO_OP_PANIC 1
+#define RUDO_OP_PANIC  1
+#define RUDO_OP_SETUID 2
 
 struct mmix_sysinfo {
     uint32_t total_ram_kb;

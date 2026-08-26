@@ -173,6 +173,10 @@ int setuid(int uid) {
     return (int)raw_syscall1(SYS_SETUID, uid);
 }
 
+int getuid(void) {
+    return (int)raw_syscall1(SYS_GETUID, 0);
+}
+
 void gfx_fill_rect(int x, int y, int w, int h, uint32_t color) {
     raw_syscall6(SYS_GFX, 1, x, y, w, h, (long)color);
 }

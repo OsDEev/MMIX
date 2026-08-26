@@ -147,6 +147,8 @@ static int atoi_stub(const char *s) {
     return neg ? -v : v;
 }
 
+static void exec_external(struct stage *st);
+
 static int run_builtin(char **argv) {
     if (strcmp(argv[0], "exit") == 0) {
         sys_exit(0);
@@ -155,8 +157,10 @@ static int run_builtin(char **argv) {
         print("\033[90m-------------------------------------------------------------------------\033[0m\n");
         print("\033[1;96msystem\033[0m  fetch  free  date  uptime  ps     clear   reboot\n");
         print("\033[1;96mfiles\033[0m   cat    ls    wc    grep    pipes  echo >  echo >>  cmd < file\n");
-        print("\033[1;96mshell\033[0m   pid    ppid  kill <pid> <sig>   sleep <s>   exit   panic\n");
-        print("\033[1;96mdemo\033[0m     gfx    busy\n");
+        print("\033[1;96mshell\033[0m   pid  ppid  whoami  id  kill <pid> <sig>   sleep <s>   exit\n");
+        print("\033[1;96mpriv\033[0m    root   rudo <cmd>   panic   (privilege escalation)\n");
+        print("\033[1;96mgraphics\033[0m desktop  gfx\n");
+        print("\033[1;96mdemo\033[0m     busy\n");
         print("\033[90m-------------------------------------------------------------------------\033[0m\n");
         print("try: \033[1;33mcat /etc/unit.conf | grep exec | wc -l\033[0m\n");
         return 1;
@@ -180,6 +184,56 @@ static int run_builtin(char **argv) {
         return 1;
     } else if (strcmp(argv[0], "kill") == 0 && argv[1] && argv[2]) {
         kill(atoi_stub(argv[1]), atoi_stub(argv[2]));
+        return 1;
+    } else if (strcmp(argv[0], "whoami") == 0) {
+        int uid = getuid();
+        if (uid == 0) print("root\n");
+        else { print("user("); print_num(uid); print(")\n"); }
+        return 1;
+    } else if (strcmp(argv[0], "id") == 0) {
+        int uid = getuid();
+        int gid = getpgid(0);
+        print("uid="); print_num(uid);
+        print(" gid="); print_num(gid);
+        if (uid == 0) print(" (root)");
+        print("\n");
+        return 1;
+    } else if (strcmp(argv[0], "root") == 0) {
+        if (getuid() == 0) {
+            print("already root\n");
+            return 1;
+        }
+        print("requesting root access...\n");
+        int rc = rudo_request(RUDO_OP_SETUID);
+        if (rc == 0) {
+            print("\033[1;92mYou are now root.\033[0m\n");
+        } else {
+            print("\033[1;91mAccess denied.\033[0m\n");
+        }
+        return 1;
+    } else if (strcmp(argv[0], "rudo") == 0) {
+        if (argv[1] == NULL) { print("usage: rudo <command>\n"); return 1; }
+        struct stage st = {{0}};
+        int j = 0;
+        for (int i = 1; argv[i] && j < MAX_ARGS - 1; i++) st.argv[j++] = argv[i];
+        st.argv[j] = NULL;
+        if (getuid() == 0) {
+            exec_external(&st);
+        }
+        print("requesting root for: ");
+        print(argv[1]);
+        print("\n");
+        long pid = sys_fork();
+        if (pid == 0) {
+            int rc = rudo_request(RUDO_OP_SETUID);
+            if (rc != 0) {
+                print("\033[1;91mrudo: access denied\033[0m\n");
+                sys_exit(1);
+            }
+            exec_external(&st);
+        }
+        int st2 = 0;
+        waitpid((int)pid, &st2);
         return 1;
     }
     return 0;
@@ -281,7 +335,7 @@ int main(void) {
     tcsetpgrp(getpgid(0));
     setuid(1000); /* the shell is unprivileged; root stays with init/rudod */
 
-    print("\nMMix shell. Type \033[1;32mhelp\033[0m for commands.\n");
+    print("\n\033[1;36mMMix 0.4.0\033[0m shell. Type \033[1;32mhelp\033[0m for commands.\n");
 
     for (;;) {
         print("\033[1;35m$\033[0m ");

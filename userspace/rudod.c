@@ -2,8 +2,9 @@
  * rudod -- root user do (MMIX root daemon, uid 0).
  *
  * Parks in rudo_wait() until an unprivileged process requests a
- * privileged operation. PANIC requests are approved here and the
- * kernel performs an intentional page fault in root context.
+ * privileged operation. PANIC requests trigger an intentional kernel
+ * page fault. SETUID requests are auto-approved (kernel sets the
+ * requester's uid to 0).
  */
 #include "libc.h"
 
@@ -19,8 +20,11 @@ int main(void) {
         }
 
         if (req[0] == RUDO_OP_PANIC) {
-            /* The kernel faults intentionally on return -- never reaches. */
             print("rudod: approved PANIC from pid ");
+            print_num(req[1]);
+            print("\n");
+        } else if (req[0] == RUDO_OP_SETUID) {
+            print("rudod: approved SETUID for pid ");
             print_num(req[1]);
             print("\n");
         } else {

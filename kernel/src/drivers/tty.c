@@ -173,7 +173,7 @@ static void csi_dispatch(int final) {
         case 'C': erase_cursor(); cur_x += p0; if (cur_x >= cols) cur_x = cols - 1; break;
         case 'D': erase_cursor(); cur_x -= p0; if (cur_x < 0) cur_x = 0; break;
         case 'm': { /* SGR */
-            int n = csi_count + 1;
+            int n = (csi_cur >= 0) ? csi_cur + 1 : csi_count;
             if (n == 1 && csi_param[0] < 0) { g_fg = ansi_palette[7]; g_bg = ansi_palette[0]; break; }
             for (int i = 0; i < n; i++) {
                 int v = csi_param[i];
@@ -209,13 +209,23 @@ static void tty_ansi_feed(char c) {
 
     /* in CSI */
     if (c >= '0' && c <= '9') {
-        if (csi_cur < 0) { csi_cur = csi_count; if (csi_cur < ANSI_MAX_PARAMS) csi_param[csi_cur] = 0; }
-        if (csi_cur < ANSI_MAX_PARAMS) csi_param[csi_cur] = csi_param[csi_cur] * 10 + (c - '0');
+        if (csi_cur < 0) {
+            csi_cur = (csi_count < ANSI_MAX_PARAMS) ? csi_count
+                                                    : ANSI_MAX_PARAMS - 1;
+            csi_param[csi_cur] = 0;
+        }
+        csi_param[csi_cur] = csi_param[csi_cur] * 10 + (c - '0');
         return;
     }
     if (c == ';') {
-        csi_cur = csi_count;
-        if (csi_cur < ANSI_MAX_PARAMS - 1) csi_count++;
+        if (csi_cur < 0) {
+            csi_cur = (csi_count < ANSI_MAX_PARAMS) ? csi_count
+                                                    : ANSI_MAX_PARAMS - 1;
+            csi_param[csi_cur] = 0;
+        }
+        csi_count = csi_cur + 1;             /* next parameter slot */
+        csi_cur = -1;
+        if (csi_count >= ANSI_MAX_PARAMS) csi_count = ANSI_MAX_PARAMS - 1;
         return;
     }
     if (c >= 0x40 && c <= 0x7E) {

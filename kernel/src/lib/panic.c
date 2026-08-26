@@ -4,14 +4,7 @@
 #include <sched.h>
 #include <tty.h>
 
-/*
- * MMIX kernel panic -- the BSOD.
- *
- * The screen is painted directly (gfx_clear), then text goes through
- * kprintf so the same output lands on COM1 for headless debugging.
- * ANSI codes set white-on-blue for the framebuffer.
- */
-#define PANIC_BG 0xFF0078D7 /* classic blue */
+#define PANIC_BG 0xFF0078D7
 
 void panic(const char *fmt, ...) {
     __asm__ volatile("cli");

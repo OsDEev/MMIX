@@ -724,6 +724,7 @@ static struct {
     int op;
     int requester;
     bool pending;
+    int result;          /* 0 = approved, -1 = denied */
 } rudo_queue;
 
 /* Set while an intentional (rudo-requested) fault is in flight. */
@@ -735,18 +736,24 @@ static int64_t sys_rudo_request(uint64_t op, uint64_t a2, uint64_t a3,
     task_t *cur = current_task();
     if (cur == NULL) return -1;
 
-    task_t *daemon = sched_find_pid(2); /* rudod is always PID 2 */
+    task_t *daemon = sched_find_pid(2);
     if (daemon == NULL || daemon->uid != 0 || daemon->zombie) {
         kprintf("[RUDO] request dropped: rudod is not running\n");
         return -1;
     }
-    if (rudo_queue.pending) return -1; /* busy */
+    if (rudo_queue.pending) return -1;
 
     rudo_queue.op = (int)op;
     rudo_queue.requester = cur->pid;
     rudo_queue.pending = true;
+    rudo_queue.result = -1;
     sched_wake(daemon);
-    return 0;
+
+    /* Block until rudod processes this request. */
+    cur->state = TASK_BLOCKED;
+    sched_yield();
+
+    return rudo_queue.result;
 }
 
 static int64_t sys_rudo_wait(uint64_t buf_ptr, uint64_t a2, uint64_t a3,
@@ -769,13 +776,26 @@ static int64_t sys_rudo_wait(uint64_t buf_ptr, uint64_t a2, uint64_t a3,
             }
 
             if (op == RUDO_OP_PANIC) {
-                /* Intentional kernel page fault -- the real thing. */
                 g_rudo_fault_requester = requester;
                 kprintf("[RUDO] root approved PANIC from PID %d\n", requester);
                 uint32_t *fault_addr = (uint32_t *)0x10;
-                __asm__ volatile("" : "+r"(fault_addr)); /* opaque to GCC */
+                __asm__ volatile("" : "+r"(fault_addr));
                 *fault_addr = 0xDEADBEEF;
             }
+
+            if (op == RUDO_OP_SETUID) {
+                kprintf("[RUDO] root approved SETUID for PID %d\n", requester);
+                task_t *target = sched_find_pid(requester);
+                if (target != NULL) target->uid = 0;
+                rudo_queue.result = 0;
+            }
+
+            /* Wake the requester (except PANIC which faults). */
+            if (op != RUDO_OP_PANIC) {
+                task_t *requester_task = sched_find_pid(requester);
+                if (requester_task != NULL) sched_wake(requester_task);
+            }
+
             return op;
         }
         cur->state = TASK_BLOCKED;
@@ -787,9 +807,17 @@ static int64_t sys_setuid(uint64_t uid, uint64_t a2, uint64_t a3,
                            uint64_t a4, uint64_t a5, uint64_t a6) {
     (void)a2; (void)a3; (void)a4; (void)a5; (void)a6;
     task_t *cur = current_task();
-    if (cur == NULL || cur->uid != 0) return -1; /* root only */
+    if (cur == NULL || cur->uid != 0) return -1;
     cur->uid = (uint32_t)uid;
     return 0;
+}
+
+static int64_t sys_getuid(uint64_t a1, uint64_t a2, uint64_t a3,
+                           uint64_t a4, uint64_t a5, uint64_t a6) {
+    (void)a1; (void)a2; (void)a3; (void)a4; (void)a5; (void)a6;
+    task_t *cur = current_task();
+    if (cur == NULL) return -1;
+    return (int64_t)cur->uid;
 }
 
 static int64_t sys_time(uint64_t out_ptr, uint64_t a2, uint64_t a3,
@@ -925,7 +953,7 @@ static int64_t sys_uname(uint64_t buf_ptr, uint64_t a2, uint64_t a3,
     (void)a2; (void)a3; (void)a4; (void)a5; (void)a6;
     char *buf = (char *)buf_ptr;
     if (buf == NULL) return -1;
-    const char *info = "MMix 0.3.0 x86_64";
+    const char *info = "MMix 0.4.0 x86_64";
     memcpy(buf, info, strlen(info) + 1);
     return 0;
 }
@@ -998,6 +1026,7 @@ static syscall_fn syscall_table[MAX_SYSCALLS] = {
     [SYS_RUDO_REQUEST] = sys_rudo_request,
     [SYS_RUDO_WAIT]    = sys_rudo_wait,
     [SYS_SETUID]       = sys_setuid,
+    [SYS_GETUID]       = sys_getuid,
     [SYS_SETPGID] = sys_setpgid,
     [SYS_GETPGID] = sys_getpgid,
     [SYS_SETSID]  = sys_setsid,
