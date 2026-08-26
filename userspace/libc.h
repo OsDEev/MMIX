@@ -27,6 +27,9 @@
 #define SYS_KILL 19
 #define SYS_SIGNAL 20
 #define SYS_SYSINFO 21
+#define SYS_TIME 26
+#define SYS_REBOOT 27
+#define SYS_GFX 28
 #define SYS_SETPGID 22
 #define SYS_GETPGID 23
 #define SYS_SETSID 24
@@ -73,6 +76,12 @@ int brk_syscall(void *addr);
 int uname(char *buf);
 
 /* System info */
+struct mmix_timeval {
+    uint32_t sec, min, hour;
+    uint32_t day, mon, year;
+    uint32_t uptime_s;
+};
+
 struct mmix_sysinfo {
     uint32_t total_ram_kb;
     uint32_t free_ram_kb;
@@ -82,6 +91,14 @@ struct mmix_sysinfo {
     uint32_t fb_bpp;
 };
 int sysinfo(struct mmix_sysinfo *si);
+int systime(struct mmix_timeval *tv);
+void reboot(void) __attribute__((noreturn));
+void gfx_fill_rect(int x, int y, int w, int h, uint32_t color);
+void gfx_line(int x0, int y0, int x1, int y1, uint32_t color);
+void gfx_circle(int cx, int cy, int r, uint32_t color);
+void gfx_fill_circle(int cx, int cy, int r, uint32_t color);
+void gfx_rect(int x, int y, int w, int h, uint32_t color);
+void gfx_clear(uint32_t color);
 
 /* Memory */
 void *malloc(size_t n);

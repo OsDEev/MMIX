@@ -23,6 +23,23 @@ static inline long raw_syscall1(long n, long a) {
     return raw_syscall3(n, a, 0, 0);
 }
 
+static inline long raw_syscall6(long n, long a, long b, long c, long d, long e, long f) {
+    long ret;
+    register long r_num asm("rax") = n;
+    register long r1 asm("rdi") = a;
+    register long r2 asm("rsi") = b;
+    register long r3 asm("rdx") = c;
+    register long r4 asm("r10") = d;
+    register long r5 asm("r8") = e;
+    register long r6 asm("r9") = f;
+    __asm__ volatile("syscall"
+                     : "+r"(r_num), "+r"(r1), "+r"(r2), "+r"(r3),
+                       "+r"(r4), "+r"(r5), "+r"(r6)
+                     :
+                     : "rcx", "memory");
+    return r_num;
+}
+
 /*
  * fork() keeps the callee-saved registers intact across the kernel call.
  * The child resumes at the instruction after `syscall` (the pops below),
@@ -128,6 +145,39 @@ int uname(char *buf) { return (int)raw_syscall1(SYS_UNAME, (long)buf); }
 
 int sysinfo(struct mmix_sysinfo *si) {
     return (int)raw_syscall1(SYS_SYSINFO, (long)si);
+}
+
+int systime(struct mmix_timeval *tv) {
+    return (int)raw_syscall1(SYS_TIME, (long)tv);
+}
+
+void reboot(void) {
+    raw_syscall1(SYS_REBOOT, 0);
+    for (;;);
+}
+
+void gfx_fill_rect(int x, int y, int w, int h, uint32_t color) {
+    raw_syscall6(SYS_GFX, 1, x, y, w, h, (long)color);
+}
+
+void gfx_rect(int x, int y, int w, int h, uint32_t color) {
+    raw_syscall6(SYS_GFX, 6, x, y, w, h, (long)color);
+}
+
+void gfx_line(int x0, int y0, int x1, int y1, uint32_t color) {
+    raw_syscall6(SYS_GFX, 2, x0, y0, x1, y1, (long)color);
+}
+
+void gfx_circle(int cx, int cy, int r, uint32_t color) {
+    raw_syscall6(SYS_GFX, 3, cx, cy, r, 0, (long)color);
+}
+
+void gfx_fill_circle(int cx, int cy, int r, uint32_t color) {
+    raw_syscall6(SYS_GFX, 5, cx, cy, r, 0, (long)color);
+}
+
+void gfx_clear(uint32_t color) {
+    raw_syscall6(SYS_GFX, 4, (long)color, 0, 0, 0, 0);
 }
 
 /* --- memory (malloc over anonymous mmap) --------------------------------- */

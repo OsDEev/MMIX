@@ -23,30 +23,34 @@ int main(int argc, char **argv) {
         "/_//     "
     };
     int logo_n = 8;
+    const char *C_LOGO = "\033[1;36m";
+    const char *C_LABEL = "\033[1;92m";
+    const char *C_RESET = "\033[0m";
 
     char line[128];
     int li = 0;
 
-#define NEXTLINE()                                     \
-    do {                                               \
-        print(logo[li < logo_n ? li : logo_n - 1]);    \
-        print(line);                                   \
-        print("\n");                                   \
-        li++;                                          \
+#define NEXTLINE()                                          \
+    do {                                                    \
+        print(C_LOGO);                                      \
+        print(logo[li < logo_n ? li : logo_n - 1]);         \
+        print(C_RESET);                                     \
+        print(line);                                        \
+        print("\n");                                        \
+        li++;                                               \
     } while (0)
 
     /* header */
     memcpy(line, "\x1b", 0); /* no-op keep compilers quiet */
     {
-        char host[64];
-        memcpy(host, "mmix@mmix", 10);
+        const char *host = "\033[1;92mmix\033[1;35m@\033[1;92mmmix\033[0m";
         int i = 0;
         for (; host[i]; i++) line[i] = host[i];
         line[i] = '\0';
     }
     NEXTLINE();
     {
-        const char *bar = "---------";
+        const char *bar = "\033[90m--------------------\033[0m";
         int i = 0;
         for (; bar[i]; i++) line[i] = bar[i];
         line[i] = '\0';
@@ -54,7 +58,7 @@ int main(int argc, char **argv) {
     NEXTLINE();
 
     /* OS */
-    memcpy(line, "OS: ", 5);
+    memcpy(line, "\033[1;92mOS:\033[0m ", 14);
     {
         int i = 4;
         const char *s = os;
@@ -65,7 +69,7 @@ int main(int argc, char **argv) {
 
     /* Uptime */
     if (have_si) {
-        memcpy(line, "Uptime: ", 9);
+        memcpy(line, "\033[1;92mUptime:\033[0m ", 21);
         int i = 8;
         uint32_t m = si.uptime_s / 60, s = si.uptime_s % 60;
         if (m) {
@@ -82,13 +86,13 @@ int main(int argc, char **argv) {
 
     /* Shell */
     {
-        memcpy(line, "Shell: /bin/sh", 15);
+        memcpy(line, "\033[1;92mShell:\033[0m /bin/sh", 26);
         NEXTLINE();
     }
 
     /* Resolution */
     if (have_si && si.fb_w) {
-        memcpy(line, "Resolution: ", 13);
+        memcpy(line, "\033[1;92mResolution:\033[0m ", 26);
         int i = 12;
         uint32_t v = si.fb_w;
         char tmp[12];
@@ -109,7 +113,7 @@ int main(int argc, char **argv) {
 
     /* RAM */
     if (have_si) {
-        memcpy(line, "RAM: ", 6);
+        memcpy(line, "\033[1;92mRAM:\033[0m ", 17);
         int i = 5;
         uint32_t used_kb = si.total_ram_kb - si.free_ram_kb;
         uint32_t v = used_kb / 1024;
@@ -135,7 +139,7 @@ int main(int argc, char **argv) {
 
     /* color blocks */
     {
-        const char *blocks = "##### ##### ##### ##### ##### #####";
+        const char *blocks = "\033[41m   \033[42m   \033[43m   \033[44m   \033[45m   \033[46m   \033[0m";
         int i = 0;
         for (; blocks[i]; i++) line[i] = blocks[i];
         line[i] = '\0';

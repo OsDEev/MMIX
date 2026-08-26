@@ -10,6 +10,8 @@
 #include <pmm.h>
 #include <lapic.h>
 #include <pipe.h>
+#include <rtc.h>
+#include <gfx.h>
 #include <sched.h>
 #include <string.h>
 #include <syscall.h>
@@ -700,6 +702,69 @@ static int64_t sys_tcsetpgrp(uint64_t pgid, uint64_t a2, uint64_t a3,
     return 0;
 }
 
+static int64_t sys_time(uint64_t out_ptr, uint64_t a2, uint64_t a3,
+                        uint64_t a4, uint64_t a5, uint64_t a6) {
+    (void)a2; (void)a3; (void)a4; (void)a5; (void)a6;
+    struct mmix_timeval *tv = (struct mmix_timeval *)out_ptr;
+    if (tv == NULL) return -1;
+
+    struct mmix_rtc rtc;
+    rtc_read(&rtc);
+    tv->sec = rtc.sec; tv->min = rtc.min; tv->hour = rtc.hour;
+    tv->day = rtc.day; tv->mon = rtc.mon; tv->year = rtc.year;
+    tv->uptime_s = (uint32_t)(g_uptime_ticks / TIMER_HZ);
+    return 0;
+}
+
+static int64_t sys_reboot(uint64_t a1, uint64_t a2, uint64_t a3,
+                          uint64_t a4, uint64_t a5, uint64_t a6) {
+    (void)a1; (void)a2; (void)a3; (void)a4; (void)a5; (void)a6;
+    kprintf("[MMIX] Rebooting...\n");
+
+    /* 8042 keyboard controller reset pulse */
+    for (volatile int i = 0; i < 100000; i++) { }
+    __asm__ volatile("outb %%al, $0x64" :: "a"((uint8_t)0xFE));
+
+    /* Fallback: triple fault via a far return to a null IDT entry */
+    __asm__ volatile("cli");
+    for (;;) __asm__ volatile("hlt");
+    return 0;
+}
+
+/* GFX ops */
+#define GFX_FILL_RECT 1
+#define GFX_LINE      2
+#define GFX_CIRCLE    3
+#define GFX_CLEAR     4
+#define GFX_FILL_CIRCLE 5
+#define GFX_RECT      6
+
+static int64_t sys_gfx(uint64_t op, uint64_t a, uint64_t b, uint64_t c,
+                       uint64_t d, uint64_t color) {
+    switch (op) {
+        case GFX_FILL_RECT:
+            gfx_fill_rect((int)a, (int)b, (int)c, (int)d, (uint32_t)color);
+            return 0;
+        case GFX_RECT:
+            gfx_rect((int)a, (int)b, (int)c, (int)d, (uint32_t)color);
+            return 0;
+        case GFX_LINE:
+            gfx_line((int)a, (int)b, (int)c, (int)d, (uint32_t)color);
+            return 0;
+        case GFX_CIRCLE:
+            gfx_circle((int)a, (int)b, (int)c, (uint32_t)color);
+            return 0;
+        case GFX_FILL_CIRCLE:
+            gfx_fill_circle((int)a, (int)b, (int)c, (uint32_t)color);
+            return 0;
+        case GFX_CLEAR:
+            gfx_clear((uint32_t)a);
+            return 0;
+        default:
+            return -1;
+    }
+}
+
 static int64_t sys_sysinfo(uint64_t out_ptr, uint64_t a2, uint64_t a3,
                            uint64_t a4, uint64_t a5, uint64_t a6) {
     (void)a2; (void)a3; (void)a4; (void)a5; (void)a6;
@@ -836,6 +901,9 @@ static syscall_fn syscall_table[MAX_SYSCALLS] = {
     [SYS_KILL]    = sys_kill,
     [SYS_SIGNAL]  = sys_signal,
     [SYS_SYSINFO] = sys_sysinfo,
+    [SYS_TIME]    = sys_time,
+    [SYS_REBOOT]  = sys_reboot,
+    [SYS_GFX]     = sys_gfx,
     [SYS_SETPGID] = sys_setpgid,
     [SYS_GETPGID] = sys_getpgid,
     [SYS_SETSID]  = sys_setsid,

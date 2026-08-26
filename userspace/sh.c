@@ -274,10 +274,10 @@ int main(void) {
     setpgid(0, 0);
     tcsetpgrp(getpgid(0));
 
-    print("\nMMix shell. Type `help` for commands.\n");
+    print("\nMMix shell. Type \033[1;32mhelp\033[0m for commands.\n");
 
     for (;;) {
-        print("$ ");
+        print("\033[1;35m$\033[0m ");
         readline(line, sizeof(line));
         if (line[0] == '\0') continue;
         run_pipeline(line);

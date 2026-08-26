@@ -30,10 +30,19 @@
 #define SYS_GETPGID    23
 #define SYS_SETSID     24
 #define SYS_TCSETPGRP  25
+#define SYS_TIME       26
+#define SYS_REBOOT     27
+#define SYS_GFX        28
 
 #define MAX_SYSCALLS    64
 
 /* Filled by SYS_SYSINFO (kernel -> user memory). */
+struct mmix_timeval {
+    uint32_t sec, min, hour;
+    uint32_t day, mon, year;
+    uint32_t uptime_s;
+};
+
 struct mmix_sysinfo {
     uint32_t total_ram_kb;
     uint32_t free_ram_kb;
