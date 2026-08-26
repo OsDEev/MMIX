@@ -1,0 +1,15 @@
+/limine-binary
+/edk2-ovmf-bins
+*.iso
+*.hdd
+
+# Build artifacts
+/bin/
+/obj/
+/iso_root/
+*.o
+*.d
+compile_commands.json
+
+# Regeneratable initrd (source lives in initrd_root/, built by `make initrd`)
+/boot/initrd.tar
