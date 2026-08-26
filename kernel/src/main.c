@@ -19,6 +19,11 @@
 #include <chardev.h>
 #include <vfs.h>
 #include <mouse.h>
+#include <pci.h>
+#include <ahci.h>
+#include <blockdev.h>
+#include <partition.h>
+#include <ext2.h>
 
 #include "elf.h"
 
@@ -132,6 +137,26 @@ void _start(void) {
         have_initrd = true;
     } else {
         kprintf("[WARN] No initrd module loaded\n");
+    }
+
+    /* === Storage subsystem === */
+    blockdev_init();
+    pci_init();
+
+    if (ahci_init()) {
+        kprintf("[BOOT] Storage initialized\n");
+        partition_init();
+        /* Try ext2 on raw disk first, then partitions */
+        if (!ext2_mount("sda", "/mnt")) {
+            if (ext2_mount("sda1", "/mnt")) {
+                ext2_list_dir("/");
+                ext2_list_dir("/bin");
+            }
+        } else {
+            ext2_list_dir("/");
+            ext2_list_dir("/bin");
+        }
+        kprintf("[BOOT] Storage init done.\n");
     }
 
     /* Scheduler */

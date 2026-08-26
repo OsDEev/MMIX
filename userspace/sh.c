@@ -335,7 +335,7 @@ int main(void) {
     tcsetpgrp(getpgid(0));
     setuid(1000); /* the shell is unprivileged; root stays with init/rudod */
 
-    print("\n\033[1;36mMMix 0.4.0\033[0m shell. Type \033[1;32mhelp\033[0m for commands.\n");
+    print("\n\033[1;36mMMix 0.5.0\033[0m shell. Type \033[1;32mhelp\033[0m for commands.\n");
 
     for (;;) {
         print("\033[1;35m$\033[0m ");

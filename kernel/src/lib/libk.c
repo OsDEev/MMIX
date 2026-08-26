@@ -66,21 +66,94 @@ void kprintf(const char *fmt, ...) {
         }
 
         fmt++;
+
+        /* Parse optional zero-padding width: %02x, %04x, etc. */
+        int pad_width = 0;
+        char pad_char = ' ';
+        if (*fmt == '0') {
+            pad_char = '0';
+            fmt++;
+        }
+        while (*fmt >= '0' && *fmt <= '9') {
+            pad_width = pad_width * 10 + (*fmt - '0');
+            fmt++;
+        }
+
+        /* Handle %lx, %ld, %lu, %lx */
+        if (*fmt == 'l') {
+            fmt++;
+            switch (*fmt) {
+                case 'u': print_uint(va_arg(args, unsigned long), 10, false); break;
+                case 'd': print_int((int64_t)va_arg(args, long)); break;
+                case 'x': print_uint(va_arg(args, unsigned long), 16, false); break;
+                case 'p': {
+                    uint64_t v = (uint64_t)va_arg(args, void *);
+                    kprint("0x");
+                    print_uint(v, 16, false);
+                    break;
+                }
+                default:
+                    serial_putc('l');
+                    serial_putc(*fmt);
+                    break;
+            }
+            fmt++;
+            continue;
+        }
+
         switch (*fmt) {
             case 's': {
                 const char *s = va_arg(args, const char *);
                 kprint(s ? s : "(null)");
                 break;
             }
-            case 'd':
-                print_int(va_arg(args, int));
+            case 'd': {
+                int v = va_arg(args, int);
+                /* For padded %0Nd: unsigned hex-like, but we want decimal padding */
+                if (pad_width > 0 && v >= 0) {
+                    /* Print with zero-padding for decimal */
+                    char num[24];
+                    int i = 0;
+                    unsigned uv = (unsigned)v;
+                    if (uv == 0) num[i++] = '0';
+                    else { while (uv) { num[i++] = '0' + uv % 10; uv /= 10; } }
+                    while (i < pad_width) { serial_putc('0'); i++; }
+                    for (int j = i - 1; j >= 0; j--) serial_putc(num[j]);
+                } else {
+                    print_int(v);
+                }
                 break;
-            case 'u':
-                print_uint(va_arg(args, uint64_t), 10, false);
+            }
+            case 'u': {
+                uint64_t v = va_arg(args, uint64_t);
+                if (pad_width > 0) {
+                    char num[24];
+                    int i = 0;
+                    if (v == 0) num[i++] = '0';
+                    else { while (v) { num[i++] = '0' + v % 10; v /= 10; } }
+                    int actual = i;
+                    while (actual < pad_width) { serial_putc(pad_char); actual++; }
+                    for (int j = i - 1; j >= 0; j--) serial_putc(num[j]);
+                } else {
+                    print_uint(v, 10, false);
+                }
                 break;
-            case 'x':
-                print_uint(va_arg(args, uint64_t), 16, false);
+            }
+            case 'x': {
+                uint64_t v = va_arg(args, uint64_t);
+                if (pad_width > 0) {
+                    char num[24];
+                    int i = 0;
+                    if (v == 0) num[i++] = '0';
+                    else { while (v) { num[i++] = "0123456789abcdef"[v & 0xF]; v >>= 4; } }
+                    int actual = i;
+                    while (actual < pad_width) { serial_putc(pad_char); actual++; }
+                    for (int j = i - 1; j >= 0; j--) serial_putc(num[j]);
+                } else {
+                    print_uint(v, 16, false);
+                }
                 break;
+            }
             case 'X':
                 print_uint(va_arg(args, uint64_t), 16, true);
                 break;
@@ -184,4 +257,14 @@ int strcmp(const char *s1, const char *s2) {
         s2++;
     }
     return *(unsigned char *)s1 - *(unsigned char *)s2;
+}
+
+/* Minimal snprintf into a fixed buffer (kernel utility). */
+int snprintf(char *out, size_t cap, const char *fmt, ...) {
+    if (cap == 0) return 0;
+    va_list ap;
+    va_start(ap, fmt);
+    vsnprintf_mini(out, cap, fmt, ap);
+    va_end(ap);
+    return strlen(out);
 }

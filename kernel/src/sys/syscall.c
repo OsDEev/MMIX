@@ -1034,7 +1034,7 @@ static int64_t sys_uname(uint64_t buf_ptr, uint64_t a2, uint64_t a3,
     (void)a2; (void)a3; (void)a4; (void)a5; (void)a6;
     char *buf = (char *)buf_ptr;
     if (buf == NULL) return -1;
-    const char *info = "MMix 0.4.0 x86_64";
+    const char *info = "MMix 0.5.0 x86_64";
     memcpy(buf, info, strlen(info) + 1);
     return 0;
 }

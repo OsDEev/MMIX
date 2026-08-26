@@ -3,7 +3,7 @@
 A hobby x86_64 operating system bootable via the
 [Limine boot protocol](https://github.com/limine-bootloader/limine).
 
-**Current version: 0.4.0**
+**Current version: 0.5.0**
 
 ## Features
 

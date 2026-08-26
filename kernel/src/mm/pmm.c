@@ -142,3 +142,27 @@ void pmm_free(void *addr, size_t pages) {
 uint64_t pmm_get_usable_bytes(void) { return usable_bytes; }
 uint64_t pmm_get_free_pages(void) { return free_pages; }
 uint64_t pmm_get_total_pages(void) { return total_pages; }
+
+void *pmm_alloc_dma(size_t pages) {
+    if (pages == 0) return NULL;
+    uint64_t max_page = (4ULL * 1024 * 1024 * 1024) / PAGE_SIZE;
+    if (max_page > total_pages) max_page = total_pages;
+
+    size_t consecutive = 0;
+    uint64_t start = 0;
+    for (uint64_t i = 0; i < max_page; i++) {
+        if (!bitmap_test(i)) {
+            if (consecutive == 0) start = i;
+            consecutive++;
+            if (consecutive == pages) {
+                for (size_t j = 0; j < pages; j++)
+                    bitmap_set(start + j);
+                free_pages -= pages;
+                return (void *)(start * PAGE_SIZE + hhdm_request.response->offset);
+            }
+        } else {
+            consecutive = 0;
+        }
+    }
+    return NULL;
+}

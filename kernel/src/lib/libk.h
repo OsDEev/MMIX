@@ -15,5 +15,6 @@ void vsnprintf_mini(char *out, size_t cap, const char *fmt, va_list ap);
 /* Minimal libc subset shared by the kernel. */
 size_t strlen(const char *s);
 int strcmp(const char *s1, const char *s2);
+int snprintf(char *out, size_t cap, const char *fmt, ...);
 
 #endif /* MYUNIX_LIBK_H */
