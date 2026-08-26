@@ -10,6 +10,8 @@ void tty_init(struct limine_framebuffer *fb);
 void tty_putc(char c);
 void tty_write(const char *buf, size_t n);
 void tty_clear(void);
+void tty_set_colors(uint32_t fg, uint32_t bg);
+void tty_printf(const char *fmt, ...);
 void *tty_fb(void);
 size_t tty_pitch(void);
 uint32_t tty_bpp(void);

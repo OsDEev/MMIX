@@ -151,8 +151,14 @@ static int run_builtin(char **argv) {
     if (strcmp(argv[0], "exit") == 0) {
         sys_exit(0);
     } else if (strcmp(argv[0], "help") == 0) {
-        print("builtins: echo, help, exit, pid, ppid, kill\n");
-        print("try: cat /etc/unit.conf | grep exec | wc -l\n");
+        print("\033[1;92mMMix commands\033[0m\n");
+        print("\033[90m-------------------------------------------------------------------------\033[0m\n");
+        print("\033[1;96msystem\033[0m  fetch  free  date  uptime  ps     clear   reboot\n");
+        print("\033[1;96mfiles\033[0m   cat    ls    wc    grep    pipes  echo >  echo >>  cmd < file\n");
+        print("\033[1;96mshell\033[0m   pid    ppid  kill <pid> <sig>   sleep <s>   exit   panic\n");
+        print("\033[1;96mdemo\033[0m     gfx    busy\n");
+        print("\033[90m-------------------------------------------------------------------------\033[0m\n");
+        print("try: \033[1;33mcat /etc/unit.conf | grep exec | wc -l\033[0m\n");
         return 1;
     } else if (strcmp(argv[0], "echo") == 0) {
         for (int i = 1; argv[i]; i++) {
@@ -273,6 +279,7 @@ int main(void) {
     signal(SIGINT, SIG_IGN);
     setpgid(0, 0);
     tcsetpgrp(getpgid(0));
+    setuid(1000); /* the shell is unprivileged; root stays with init/rudod */
 
     print("\nMMix shell. Type \033[1;32mhelp\033[0m for commands.\n");
 

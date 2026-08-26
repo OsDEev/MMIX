@@ -33,6 +33,10 @@
 #define SYS_TIME       26
 #define SYS_REBOOT     27
 #define SYS_GFX        28
+#define SYS_PANIC      29
+#define SYS_RUDO_REQUEST 30
+#define SYS_RUDO_WAIT    31
+#define SYS_SETUID       32
 
 #define MAX_SYSCALLS    64
 
@@ -42,6 +46,9 @@ struct mmix_timeval {
     uint32_t day, mon, year;
     uint32_t uptime_s;
 };
+
+/* rudo ops */
+#define RUDO_OP_PANIC 1
 
 struct mmix_sysinfo {
     uint32_t total_ram_kb;

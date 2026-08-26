@@ -133,7 +133,8 @@ void _start(void) {
     /* Scheduler */
     sched_init();
 
-    /* Spawn /bin/init as the first user process */
+    /* Spawn /bin/init (PID 1, root) and /bin/rudod (PID 2, root daemon).
+     * The shell drops itself to uid 1000 at startup. */
     if (have_initrd) {
         char *argv[] = {(char *)"/bin/init", NULL};
         struct exec_image img;
@@ -143,14 +144,31 @@ void _start(void) {
             if (pid >= 0) {
                 task_t *init_task = sched_find_pid(pid);
                 if (init_task != NULL) {
+                    init_task->uid = 0;
                     init_task->brk_base = img.brk_base + PAGE_SIZE;
                     init_task->brk_cur = init_task->brk_base;
                 }
             }
-            kprintf("[BOOT] /bin/init scheduled as PID %d\n", pid);
+            kprintf("[BOOT] /bin/init scheduled as PID %d (root)\n", pid);
         } else {
             kprintf("[BOOT] PANIC: cannot load /bin/init\n");
             hcf();
+        }
+
+        char *rd_argv[] = {(char *)"/bin/rudod", NULL};
+        struct exec_image rd_img;
+        if (exec_build_image("/bin/rudod", rd_argv, &rd_img) == 0) {
+            int rpid = sched_spawn_user_task("/bin/rudod", rd_img.pml4_phys,
+                                             rd_img.entry, rd_img.user_rsp, 1);
+            if (rpid >= 0) {
+                task_t *rd = sched_find_pid(rpid);
+                if (rd != NULL) {
+                    rd->uid = 0;
+                    rd->brk_base = rd_img.brk_base + PAGE_SIZE;
+                    rd->brk_cur = rd->brk_base;
+                }
+            }
+            kprintf("[BOOT] /bin/rudod scheduled as PID %d (root daemon)\n", rpid);
         }
     } else {
         hcf();

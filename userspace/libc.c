@@ -156,6 +156,23 @@ void reboot(void) {
     for (;;);
 }
 
+void kpanic(void) {
+    raw_syscall1(SYS_PANIC, 0);
+    for (;;);
+}
+
+int rudo_request(int op) {
+    return (int)raw_syscall1(SYS_RUDO_REQUEST, op);
+}
+
+int rudo_wait(int out[2]) {
+    return (int)raw_syscall1(SYS_RUDO_WAIT, (long)out);
+}
+
+int setuid(int uid) {
+    return (int)raw_syscall1(SYS_SETUID, uid);
+}
+
 void gfx_fill_rect(int x, int y, int w, int h, uint32_t color) {
     raw_syscall6(SYS_GFX, 1, x, y, w, h, (long)color);
 }

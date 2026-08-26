@@ -53,6 +53,7 @@ typedef struct task {
     int parent_pid;
     int pgid;  /* process group id */
     int sid;   /* session id */
+    uint32_t uid; /* 0 = root */
     task_state_t state;
     bool zombie;         /* exited, awaiting waitpid() */
     int exit_status;

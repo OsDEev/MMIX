@@ -30,6 +30,10 @@
 #define SYS_TIME 26
 #define SYS_REBOOT 27
 #define SYS_GFX 28
+#define SYS_PANIC 29
+#define SYS_RUDO_REQUEST 30
+#define SYS_RUDO_WAIT 31
+#define SYS_SETUID 32
 #define SYS_SETPGID 22
 #define SYS_GETPGID 23
 #define SYS_SETSID 24
@@ -93,6 +97,11 @@ struct mmix_sysinfo {
 int sysinfo(struct mmix_sysinfo *si);
 int systime(struct mmix_timeval *tv);
 void reboot(void) __attribute__((noreturn));
+void kpanic(void) __attribute__((noreturn));
+int rudo_request(int op);
+int rudo_wait(int out[2]);
+int setuid(int uid);
+#define RUDO_OP_PANIC 1
 void gfx_fill_rect(int x, int y, int w, int h, uint32_t color);
 void gfx_line(int x0, int y0, int x1, int y1, uint32_t color);
 void gfx_circle(int cx, int cy, int r, uint32_t color);

@@ -10,6 +10,7 @@
 void serial_init(void);
 void kprint(const char *str);
 void kprintf(const char *fmt, ...);
+void vsnprintf_mini(char *out, size_t cap, const char *fmt, va_list ap);
 
 /* Minimal libc subset shared by the kernel. */
 size_t strlen(const char *s);

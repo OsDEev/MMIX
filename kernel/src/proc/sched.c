@@ -164,6 +164,7 @@ int sched_spawn_user_task(const char *name, uint64_t pml4_phys,
     t->parent_pid = parent_pid;
     t->pgid = parent_pid; /* caller adjusts via setpgid/tcsetpgrp */
     t->sid = parent_pid;
+    t->uid = 1000;        /* unprivileged by default; rudod gets 0 */
     t->state = TASK_READY;
     t->pml4_phys = pml4_phys;
     t->user_entry = entry;

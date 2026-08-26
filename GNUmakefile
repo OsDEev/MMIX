@@ -127,7 +127,7 @@ obj/%.asm.o: %.asm
 	$(NASM) $(NASMFLAGS) $< -o $@
 
 # === Userspace ===
-USERSPACE_PROGS := init sh cat ls wc grep busy free fetch ps uptime date sleep reboot gfx
+USERSPACE_PROGS := init sh cat ls wc grep busy free fetch ps uptime date sleep reboot gfx panic rudod
 USERSPACE_BINS := $(addprefix bin/,$(USERSPACE_PROGS))
 
 .PHONY: userspace

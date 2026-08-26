@@ -7,6 +7,7 @@
 #include <limine.h>
 #include <msr.h>
 #include <pmap.h>
+#include <panic.h>
 #include <pmm.h>
 #include <lapic.h>
 #include <pipe.h>
@@ -702,6 +703,95 @@ static int64_t sys_tcsetpgrp(uint64_t pgid, uint64_t a2, uint64_t a3,
     return 0;
 }
 
+static int64_t sys_panic(uint64_t a1, uint64_t a2, uint64_t a3,
+                         uint64_t a4, uint64_t a5, uint64_t a6) {
+    (void)a1; (void)a2; (void)a3; (void)a4; (void)a5; (void)a6;
+    task_t *cur = current_task();
+    if (cur == NULL || cur->uid != 0) {
+        kprintf("[RUDO] PID %d denied direct panic (not root)\n",
+                cur ? cur->pid : -1);
+        return -1;
+    }
+    panic("panic() requested by root process %s (PID %d)",
+          cur->name, cur->pid);
+}
+
+/* ------------------------------------------------------------------ */
+/* rudo: root user do -- privileged request routing through rudod      */
+/* ------------------------------------------------------------------ */
+
+static struct {
+    int op;
+    int requester;
+    bool pending;
+} rudo_queue;
+
+/* Set while an intentional (rudo-requested) fault is in flight. */
+int g_rudo_fault_requester = 0;
+
+static int64_t sys_rudo_request(uint64_t op, uint64_t a2, uint64_t a3,
+                                uint64_t a4, uint64_t a5, uint64_t a6) {
+    (void)a2; (void)a3; (void)a4; (void)a5; (void)a6;
+    task_t *cur = current_task();
+    if (cur == NULL) return -1;
+
+    task_t *daemon = sched_find_pid(2); /* rudod is always PID 2 */
+    if (daemon == NULL || daemon->uid != 0 || daemon->zombie) {
+        kprintf("[RUDO] request dropped: rudod is not running\n");
+        return -1;
+    }
+    if (rudo_queue.pending) return -1; /* busy */
+
+    rudo_queue.op = (int)op;
+    rudo_queue.requester = cur->pid;
+    rudo_queue.pending = true;
+    sched_wake(daemon);
+    return 0;
+}
+
+static int64_t sys_rudo_wait(uint64_t buf_ptr, uint64_t a2, uint64_t a3,
+                             uint64_t a4, uint64_t a5, uint64_t a6) {
+    (void)a2; (void)a3; (void)a4; (void)a5; (void)a6;
+    task_t *cur = current_task();
+    int *user_buf = (int *)buf_ptr;
+
+    if (cur == NULL || cur->uid != 0) return -1;
+
+    for (;;) {
+        if (rudo_queue.pending) {
+            int op = rudo_queue.op;
+            int requester = rudo_queue.requester;
+            rudo_queue.pending = false;
+
+            if (user_buf) {
+                user_buf[0] = op;
+                user_buf[1] = requester;
+            }
+
+            if (op == RUDO_OP_PANIC) {
+                /* Intentional kernel page fault -- the real thing. */
+                g_rudo_fault_requester = requester;
+                kprintf("[RUDO] root approved PANIC from PID %d\n", requester);
+                uint32_t *fault_addr = (uint32_t *)0x10;
+                __asm__ volatile("" : "+r"(fault_addr)); /* opaque to GCC */
+                *fault_addr = 0xDEADBEEF;
+            }
+            return op;
+        }
+        cur->state = TASK_BLOCKED;
+        sched_yield();
+    }
+}
+
+static int64_t sys_setuid(uint64_t uid, uint64_t a2, uint64_t a3,
+                           uint64_t a4, uint64_t a5, uint64_t a6) {
+    (void)a2; (void)a3; (void)a4; (void)a5; (void)a6;
+    task_t *cur = current_task();
+    if (cur == NULL || cur->uid != 0) return -1; /* root only */
+    cur->uid = (uint32_t)uid;
+    return 0;
+}
+
 static int64_t sys_time(uint64_t out_ptr, uint64_t a2, uint64_t a3,
                         uint64_t a4, uint64_t a5, uint64_t a6) {
     (void)a2; (void)a3; (void)a4; (void)a5; (void)a6;
@@ -904,6 +994,10 @@ static syscall_fn syscall_table[MAX_SYSCALLS] = {
     [SYS_TIME]    = sys_time,
     [SYS_REBOOT]  = sys_reboot,
     [SYS_GFX]     = sys_gfx,
+    [SYS_PANIC]   = sys_panic,
+    [SYS_RUDO_REQUEST] = sys_rudo_request,
+    [SYS_RUDO_WAIT]    = sys_rudo_wait,
+    [SYS_SETUID]       = sys_setuid,
     [SYS_SETPGID] = sys_setpgid,
     [SYS_GETPGID] = sys_getpgid,
     [SYS_SETSID]  = sys_setsid,

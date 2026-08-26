@@ -5,6 +5,7 @@
 #include <lapic.h>
 #include <libk.h>
 #include <msr.h>
+#include <panic.h>
 #include <pmap.h>
 #include <sched.h>
 #include <string.h>
@@ -123,6 +124,19 @@ void isr_handler(uint64_t int_no, uint64_t err_code, struct interrupt_frame *fra
             return; /* CoW break or stack growth resolved on the spot */
         }
 
+        /* rudo-approved intentional fault -> the full MMIX PANIC. */
+        {
+            extern int g_rudo_fault_requester;
+            if (g_rudo_fault_requester != 0) {
+                int req = g_rudo_fault_requester;
+                g_rudo_fault_requester = 0;
+                task_t *rt = sched_find_pid(req);
+                panic("Intentional page fault (rudo)\n"
+                      "    requested by PID %d (%s), fault address 0x%lx",
+                      req, rt ? rt->name : "?", (unsigned long)cr2);
+            }
+        }
+
         /* Unhandled user fault => SIGSEGV with default action. */
         task_t *cur = sched_get_current();
         if (cur != NULL && (frame->cs & 3) != 0) {
@@ -136,18 +150,15 @@ void isr_handler(uint64_t int_no, uint64_t err_code, struct interrupt_frame *fra
             /* Returns here only if nothing else is runnable. */
         }
 
-        kprintf("\n[EXCEPTION] %s (#%u)\n", exception_messages[int_no], int_no);
-        kprintf("  RIP: 0x%x  CS: 0x%x  RFLAGS: 0x%x\n", frame->rip, frame->cs, frame->rflags);
-        kprintf("  RSP: 0x%x  SS: 0x%x  ERR: 0x%x\n", frame->rsp, frame->ss, err_code);
-        kprintf("  CR2: 0x%x\n", cr2);
-        for (;;) __asm__ volatile("cli; hlt");
+        panic("Unhandled page fault (#14) at 0x%lx, err=0x%lx, rip=0x%lx",
+              (unsigned long)cr2, (unsigned long)err_code,
+              (unsigned long)frame->rip);
     }
 
     if (int_no < 32) {
-        kprintf("\n[EXCEPTION] %s (#%u)\n", exception_messages[int_no], int_no);
-        kprintf("  RIP: 0x%x  CS: 0x%x  RFLAGS: 0x%x\n", frame->rip, frame->cs, frame->rflags);
-        kprintf("  RSP: 0x%x  SS: 0x%x  ERR: 0x%x\n", frame->rsp, frame->ss, err_code);
-        for (;;) __asm__ volatile("cli; hlt");
+        panic("CPU exception #%u (%s), err=0x%lx, rip=0x%lx",
+              (uint32_t)int_no, exception_messages[int_no],
+              (unsigned long)err_code, (unsigned long)frame->rip);
     } else if (int_no == TIMER_VECTOR && lapic_active()) {
         lapic_eoi();
         sched_timer_tick();

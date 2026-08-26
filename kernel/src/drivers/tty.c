@@ -2,6 +2,7 @@
 #include <libk.h>
 #include <limine.h>
 #include <string.h>
+#include <libk.h>
 #include <tty.h>
 
 #include "font.h"
@@ -124,6 +125,24 @@ size_t tty_pitch(void) { return pitch; }
 uint32_t tty_bpp(void) { return bpp; }
 uint32_t tty_width(void) { return (uint32_t)cols * CELL_W; }
 uint32_t tty_height(void) { return (uint32_t)rows * CELL_H; }
+
+void tty_printf(const char *fmt, ...) {
+    char buf[512];
+    va_list ap;
+    va_start(ap, fmt);
+    vsnprintf_mini(buf, sizeof(buf) - 1, fmt, ap);
+    va_end(ap);
+    for (const char *p = buf; *p; p++) tty_putc(*p);
+}
+
+int tty_debug_state(void) { return ansi_state; }
+void *tty_fb_dbg(void) { return (void *)fb; }
+int tty_dbg_cols(void) { return cols; }
+
+void tty_set_colors(uint32_t fg, uint32_t bg) {
+    g_fg = fg;
+    g_bg = bg;
+}
 
 void tty_get_mode(uint32_t *w, uint32_t *h, uint32_t *bpp_out) {
     *w = mode_w;
