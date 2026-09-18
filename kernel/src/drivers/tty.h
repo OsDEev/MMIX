@@ -8,6 +8,7 @@ struct limine_framebuffer;
 
 void tty_init(struct limine_framebuffer *fb);
 void tty_putc(char c);
+void tty_screen_putc(char c);
 void tty_write(const char *buf, size_t n);
 void tty_clear(void);
 void tty_set_colors(uint32_t fg, uint32_t bg);

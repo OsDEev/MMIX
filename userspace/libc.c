@@ -24,7 +24,6 @@ static inline long raw_syscall1(long n, long a) {
 }
 
 static inline long raw_syscall6(long n, long a, long b, long c, long d, long e, long f) {
-    long ret;
     register long r_num asm("rax") = n;
     register long r1 asm("rdi") = a;
     register long r2 asm("rsi") = b;

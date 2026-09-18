@@ -193,7 +193,7 @@ int exec_build_image(const char *path, char *const argv[],
             if (chunk > PAGE_SIZE - (va & 0xFFFULL)) {
                 chunk = PAGE_SIZE - (va & 0xFFFULL);
             }
-            memcpy((void *)(pa + hhdm_request.response->offset + (va & 0xFFFULL)),
+            memcpy((void *)(pa + hhdm_request.response->offset),
                    node->data + phdrs[i].p_offset + done, chunk);
             done += chunk;
         }

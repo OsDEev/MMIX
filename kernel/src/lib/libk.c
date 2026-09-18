@@ -1,5 +1,6 @@
 #include <libk.h>
 #include <io.h>
+#include <tty.h>
 
 /* COM1 */
 #define COM1 0x3F8
@@ -14,11 +15,91 @@ void serial_init(void) {
     outb(COM1 + 4, 0x0B); /* IRQs enabled, RTS/DSR set */
 }
 
+static volatile int g_serial_flood = 0;
+static char g_last_ch = 0;
+static int g_repeat = 0;
+
+/* Burst tracing: capture the first 32 bytes of each new output burst. */
+#define BURST_CAP 32
+static char  g_burst_buf[BURST_CAP];
+static int   g_burst_len = 0;
+static int   g_burst_total = 0;  /* total chars in current burst */
+static int   g_burst_id = 0;     /* burst sequence number */
+
+static void flush_burst(void) {
+    if (g_burst_len == 0 && g_burst_total == 0) return;
+    /* Print captured header */
+    const char hdr[] = "[BURST#";
+    for (int i = 0; hdr[i]; i++) outb(COM1, (uint8_t)hdr[i]);
+    /* print burst id (decimal) */
+    static const char dx[] = "0123456789";
+    int v = g_burst_id;
+    char dbuf[12];
+    int dn = 0;
+    if (v == 0) { dbuf[dn++] = '0'; }
+    else { while (v > 0) { dbuf[dn++] = dx[v % 10]; v /= 10; } }
+    for (int i = dn - 1; i >= 0; i--) outb(COM1, (uint8_t)dbuf[i]);
+    const char mid[] = "] len=";
+    for (int i = 0; mid[i]; i++) outb(COM1, (uint8_t)mid[i]);
+    /* print total len (decimal) */
+    v = g_burst_total;
+    dn = 0;
+    if (v == 0) { dbuf[dn++] = '0'; }
+    else { while (v > 0) { dbuf[dn++] = dx[v % 10]; v /= 10; } }
+    for (int i = dn - 1; i >= 0; i--) outb(COM1, (uint8_t)dbuf[i]);
+    const char mid2[] = " first=";
+    for (int i = 0; mid2[i]; i++) outb(COM1, (uint8_t)mid2[i]);
+    /* print captured bytes as hex */
+    static const char hx[] = "0123456789abcdef";
+    for (int i = 0; i < g_burst_len; i++) {
+        outb(COM1, (uint8_t)hx[((uint8_t)g_burst_buf[i]) >> 4]);
+        outb(COM1, (uint8_t)hx[((uint8_t)g_burst_buf[i]) & 0xF]);
+        outb(COM1, ' ');
+    }
+    outb(COM1, '\r');
+    outb(COM1, '\n');
+    g_burst_id++;
+    g_burst_len = 0;
+    g_burst_total = 0;
+}
+
 static void serial_putc(char c) {
     if (c == '\n') {
         outb(COM1, '\r');
+        g_repeat = 0;
+        g_burst_len = 0;
+        g_burst_total = 0;
+    }
+    if (!g_serial_flood) {
+        /* Capture first bytes of each burst */
+        if (g_burst_len < BURST_CAP) {
+            g_burst_buf[g_burst_len++] = c;
+        }
+        g_burst_total++;
+        if (c == g_last_ch && c != '\n' && c != '\r') {
+            if (++g_repeat > 128) {
+                g_serial_flood = 1;
+                flush_burst();
+                const char msg[] = "\n[FLOOD] serial flood detected: repeating char 0x";
+                for (int i = 0; msg[i]; i++) outb(COM1, (uint8_t)msg[i]);
+                static const char hx[] = "0123456789abcdef";
+                outb(COM1, (uint8_t)hx[((uint8_t)c) >> 4]);
+                outb(COM1, (uint8_t)hx[((uint8_t)c) & 0xF]);
+                outb(COM1, '\r');
+                outb(COM1, '\n');
+                return;
+            }
+        } else {
+            g_repeat = 0;
+        }
+        g_last_ch = c;
+    }
+    if (g_serial_flood) {
+        if (c == '\n') g_serial_flood = 0;
+        else return;
     }
     outb(COM1, (uint8_t)c);
+    tty_screen_putc(c);
 }
 
 void kprint(const char *str) {
@@ -180,14 +261,27 @@ void kprintf(const char *fmt, ...) {
     va_end(args);
 }
 
+/* Output sink for vsnprintf_mini (a plain struct, clang-compatible). */
+struct fmt_buf {
+    char *out;
+    size_t cap;
+    size_t o;
+};
+
+static void fmt_put(struct fmt_buf *b, char c) {
+    if (b->o + 1 < b->cap) b->out[b->o++] = c;
+}
+
 void vsnprintf_mini(char *out, size_t cap, const char *fmt, va_list ap) {
-    size_t o = 0;
     if (cap == 0) return;
 
-    auto void put(char c) { if (o + 1 < cap) out[o++] = c; }
+    struct fmt_buf b;
+    b.out = out;
+    b.cap = cap;
+    b.o = 0;
 
     for (const char *p = fmt; *p; p++) {
-        if (*p != '%') { put(*p); continue; }
+        if (*p != '%') { fmt_put(&b, *p); continue; }
         p++;
 
         int longmod = 0;
@@ -197,16 +291,16 @@ void vsnprintf_mini(char *out, size_t cap, const char *fmt, va_list ap) {
             case 's': {
                 const char *s = va_arg(ap, const char *);
                 if (s == NULL) s = "(null)";
-                while (*s) put(*s++);
+                while (*s) fmt_put(&b, *s++);
                 break;
             }
             case 'd': {
                 long v = longmod ? va_arg(ap, long) : va_arg(ap, int);
                 char num[24];
                 int i = 0;
-                if (v < 0) { put('-'); v = -v; }
+                if (v < 0) { fmt_put(&b, '-'); v = -v; }
                 do { num[i++] = (char)('0' + v % 10); v /= 10; } while (v && i < 24);
-                while (i) put(num[--i]);
+                while (i) fmt_put(&b, num[--i]);
                 break;
             }
             case 'u': {
@@ -215,7 +309,7 @@ void vsnprintf_mini(char *out, size_t cap, const char *fmt, va_list ap) {
                 char num[24];
                 int i = 0;
                 do { num[i++] = (char)('0' + v % 10); v /= 10; } while (v && i < 24);
-                while (i) put(num[--i]);
+                while (i) fmt_put(&b, num[--i]);
                 break;
             }
             case 'x': {
@@ -227,22 +321,22 @@ void vsnprintf_mini(char *out, size_t cap, const char *fmt, va_list ap) {
                     num[i++] = "0123456789abcdef"[v & 0xF];
                     v >>= 4;
                 } while (v && i < 24);
-                while (i) put(num[--i]);
+                while (i) fmt_put(&b, num[--i]);
                 break;
             }
             case 'c':
-                put((char)va_arg(ap, int));
+                fmt_put(&b, (char)va_arg(ap, int));
                 break;
             case '%':
-                put('%');
+                fmt_put(&b, '%');
                 break;
             default:
-                put('%');
-                put(*p);
+                fmt_put(&b, '%');
+                fmt_put(&b, *p);
                 break;
         }
     }
-    out[o] = '\0';
+    b.out[b.o] = '\0';
 }
 
 size_t strlen(const char *s) {

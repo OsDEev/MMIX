@@ -10,4 +10,7 @@ void kbd_interrupt(void);
 int kbd_getchar(void);
 bool kbd_poll(char *out);
 
+/* Feed a character from a secondary keyboard source (USB HID). */
+void kbd_usb_push(char c);
+
 #endif /* MYUNIX_KBD_H */

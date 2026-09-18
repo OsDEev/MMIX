@@ -158,8 +158,10 @@ static int run_builtin(char **argv) {
         print("\033[1;96msystem\033[0m  fetch  free  date  uptime  ps     clear   reboot\n");
         print("\033[1;96mfiles\033[0m   cat    ls    wc    grep    pipes  echo >  echo >>  cmd < file\n");
         print("\033[1;96mshell\033[0m   pid  ppid  whoami  id  kill <pid> <sig>   sleep <s>   exit\n");
+        print("\033[1;96mutil\033[0m    calc  base64  sha256  echo  pwd\n");
+        print("\033[1;96mnetwork\033[0m netinfo  ping <IPv4> (static QEMU network)\n");
         print("\033[1;96mpriv\033[0m    root   rudo <cmd>   panic   (privilege escalation)\n");
-        print("\033[1;96mgraphics\033[0m desktop  gfx\n");
+        print("\033[1;96mgraphics\033[0m gfx\n");
         print("\033[1;96mdemo\033[0m     busy\n");
         print("\033[90m-------------------------------------------------------------------------\033[0m\n");
         print("try: \033[1;33mcat /etc/unit.conf | grep exec | wc -l\033[0m\n");
@@ -335,7 +337,7 @@ int main(void) {
     tcsetpgrp(getpgid(0));
     setuid(1000); /* the shell is unprivileged; root stays with init/rudod */
 
-    print("\n\033[1;36mMMix 0.5.0\033[0m shell. Type \033[1;32mhelp\033[0m for commands.\n");
+    print("\n\033[1;36mMMix 0.6.0\033[0m shell. Type \033[1;32mhelp\033[0m for commands.\n");
 
     for (;;) {
         print("\033[1;35m$\033[0m ");

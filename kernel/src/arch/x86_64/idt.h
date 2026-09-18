@@ -10,7 +10,10 @@
 void idt_init(void);
 void idt_set_gate(uint8_t vector, uint64_t handler, uint16_t selector, uint8_t flags);
 
-/* C-side dispatcher, called from the common stub in isr.asm */
+/* Register a driver handler for a legacy PCI IRQ line (0..15). */
+void irq_register_handler(uint8_t irq, void (*fn)(void));
+
+/* C-side dispatcher, called from the common stub in isr.S */
 struct interrupt_frame {
     uint64_t rip;
     uint64_t cs;
@@ -20,7 +23,7 @@ struct interrupt_frame {
 };
 void isr_handler(uint64_t int_no, uint64_t err_code, struct interrupt_frame *frame);
 
-/* Exception stubs (isr.asm) */
+/* Exception stubs (isr.S) */
 void isr0(void);  void isr1(void);  void isr2(void);  void isr3(void);
 void isr4(void);  void isr5(void);  void isr6(void);  void isr7(void);
 void isr8(void);  void isr9(void);  void isr10(void); void isr11(void);
@@ -30,7 +33,7 @@ void isr20(void); void isr21(void); void isr22(void); void isr23(void);
 void isr24(void); void isr25(void); void isr26(void); void isr27(void);
 void isr28(void); void isr29(void); void isr30(void); void isr31(void);
 
-/* IRQ stubs (isr.asm) */
+/* IRQ stubs (isr.S) */
 void irq0(void);  void irq1(void);  void irq2(void);  void irq3(void);
 void irq4(void);  void irq5(void);  void irq6(void);  void irq7(void);
 void irq8(void);  void irq9(void);  void irq10(void); void irq11(void);

@@ -16,10 +16,18 @@ void panic(const char *fmt, ...) {
     va_end(ap);
     reason[sizeof(reason) - 1] = '\0';
 
+    task_t *cur = sched_get_current();
+    kprintf("\n[PANIC] %s\n", reason);
+    if (cur != NULL) {
+        kprintf("    Task: %s (PID %d, PGID %d)\n",
+                cur->name, cur->pid, cur->pgid);
+    }
+    kprintf("    Uptime: %u s\n", (uint32_t)(g_uptime_ticks / 50));
+
     gfx_clear(PANIC_BG);
     tty_set_colors(0xFFFFFFFF, PANIC_BG);
 
-    task_t *cur = sched_get_current();
+    cur = sched_get_current();
 
     tty_printf("\033[H");
     tty_printf("\n");

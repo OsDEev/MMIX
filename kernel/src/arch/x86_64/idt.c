@@ -68,7 +68,7 @@ static const char *exception_messages[] = {
     "Reserved"
 };
 
-/* Stubs defined in isr.asm */
+/* Stubs defined in isr.S */
 static void (*const exception_stubs[32])(void) = {
     isr0,  isr1,  isr2,  isr3,  isr4,  isr5,  isr6,  isr7,
     isr8,  isr9,  isr10, isr11, isr12, isr13, isr14, isr15,
@@ -84,7 +84,7 @@ static void (*const irq_stubs[IRQ_COUNT])(void) = {
 void idt_set_gate(uint8_t vector, uint64_t handler, uint16_t selector, uint8_t flags) {
     idt[vector].offset_low  = handler & 0xFFFF;
     idt[vector].selector    = selector;
-    idt[vector].ist         = 0;
+    idt[vector].ist         = (vector < 32) ? 1 : 0;
     idt[vector].type_attr   = flags;
     idt[vector].offset_mid  = (handler >> 16) & 0xFFFF;
     idt[vector].offset_high = (handler >> 32) & 0xFFFFFFFF;
@@ -116,7 +116,56 @@ static inline void pic_send_eoi(uint8_t irq) {
 /* PIT ticks, used by the LAPIC calibration and exported for it. */
 volatile uint64_t g_pit_ticks = 0;
 
+/* Temporary vector trace counter (debug). */
+static unsigned g_vlog_count = 0;
+
+/* Last-256-frame trace ring; dumped over serial on the first exception. */
+#define TRACE_CAP 256
+struct trace_ent { uint64_t vec, rip, cs, rflags, rsp, ss; };
+static struct trace_ent g_tr[TRACE_CAP];
+static unsigned g_tr_i = 0;
+
+static void dump_trace(void) {
+    kprintf("---- TRACE BEGIN (%u) ----\n", (unsigned)g_vlog_count);
+    for (unsigned k = 0; k < TRACE_CAP; k++) {
+        struct trace_ent *e = &g_tr[(g_tr_i + k) % TRACE_CAP];
+        if (e->rip == 0 && e->cs == 0) continue;
+        kprintf("T%u v=%lu r=%lx cs=%lx fl=%lx sp=%lx ss=%lx\n",
+                k, (unsigned long)e->vec, (unsigned long)e->rip, (unsigned long)e->cs,
+                (unsigned long)e->rflags, (unsigned long)e->rsp, (unsigned long)e->ss);
+    }
+    kprintf("---- TRACE END ----\n");
+}
+
+/* LAPIC spurious vector + LAPIC timer (vector 48, above the PIC) */
+
+/* Registered drivers for PCI IRQs (16 legacy lines). */
+typedef void (*irq_handler_fn)(void);
+static irq_handler_fn g_irq_handlers[16];
+
+void irq_register_handler(uint8_t irq, void (*fn)(void)) {
+    if (irq < 16) g_irq_handlers[irq] = fn;
+}
+
 void isr_handler(uint64_t int_no, uint64_t err_code, struct interrupt_frame *frame) {
+    struct trace_ent *e = &g_tr[g_tr_i++ % TRACE_CAP];
+    e->vec = int_no; e->rip = frame->rip; e->cs = frame->cs;
+    e->rflags = frame->rflags; e->rsp = frame->rsp; e->ss = frame->ss;
+    g_vlog_count++;
+
+    if (int_no == 7) { /* #NM Device Not Available */
+        /* Hardware FPU is enabled (fpu_init); if the flag TS got set (lazy
+         * switching, or a bootloader relic), clear it and retry the faulting
+         * FP/SSE instruction instead of dying. */
+        uint64_t cr0;
+        __asm__ volatile("mov %%cr0, %0" : "=r"(cr0));
+        if (cr0 & (1ull << 3)) {
+            __asm__ volatile("clts" ::: "memory");
+            kprintf("[NM] FPU not available - cleared CR0.TS and retried\n");
+            return;
+        }
+    }
+
     if (int_no == 14) { /* Page Fault: CR2 holds the faulting address */
         uint64_t cr2;
         __asm__ volatile("mov %%cr2, %0" : "=r"(cr2));
@@ -137,6 +186,7 @@ void isr_handler(uint64_t int_no, uint64_t err_code, struct interrupt_frame *fra
                       req, rt ? rt->name : "?", (unsigned long)cr2);
             }
         }
+        dump_trace();
 
         /* Unhandled user fault => SIGSEGV with default action. */
         task_t *cur = sched_get_current();
@@ -157,9 +207,20 @@ void isr_handler(uint64_t int_no, uint64_t err_code, struct interrupt_frame *fra
     }
 
     if (int_no < 32) {
-        panic("CPU exception #%u (%s), err=0x%lx, rip=0x%lx",
+        if (int_no == 13 && (frame->cs & 3) == 0) {
+            uint64_t *p = (uint64_t *)frame->rsp;
+            kprintf("[IRET] iretq target frame @0x%lx: rip=0x%lx cs=0x%lx "
+                    "rflags=0x%lx rsp=0x%lx ss=0x%lx\n",
+                    (unsigned long)p, (unsigned long)p[0], (unsigned long)p[1],
+                    (unsigned long)p[2], (unsigned long)p[3],
+                    (unsigned long)p[4]);
+        }
+        dump_trace();
+        panic("CPU exception #%u (%s), err=0x%lx, rip=0x%lx cs=0x%lx ss=0x%lx rsp=0x%lx",
               (uint32_t)int_no, exception_messages[int_no],
-              (unsigned long)err_code, (unsigned long)frame->rip);
+              (unsigned long)err_code, (unsigned long)frame->rip,
+              (unsigned long)frame->cs, (unsigned long)frame->ss,
+              (unsigned long)frame->rsp);
     } else if (int_no == TIMER_VECTOR && lapic_active()) {
         lapic_eoi();
         sched_timer_tick();
@@ -172,6 +233,9 @@ void isr_handler(uint64_t int_no, uint64_t err_code, struct interrupt_frame *fra
             kbd_interrupt();
         } else if (int_no == IRQ_BASE + 12) { /* PS/2 mouse */
             mouse_interrupt();
+        } else if ((int_no - IRQ_BASE) < 16) {
+            irq_handler_fn h = g_irq_handlers[int_no - IRQ_BASE];
+            if (h != NULL) h();
         }
     }
 }

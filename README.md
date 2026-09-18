@@ -3,7 +3,7 @@
 A hobby x86_64 operating system bootable via the
 [Limine boot protocol](https://github.com/limine-bootloader/limine).
 
-**Current version: 0.5.0**
+**Current version: 0.6.0**
 
 ## Features
 
@@ -59,17 +59,18 @@ A hobby x86_64 operating system bootable via the
 - `rudo <cmd>`: runs a command as root (like sudo)
 - Programs: `init`, `sh`, `cat`, `ls`, `wc`, `grep`, `busy`, `free`,
   `fetch` (colored system info), `ps`, `uptime`, `date`, `sleep`,
-  `reboot`, `gfx` (graphics demo), `panic` (BSOD trigger), `rudod`,
-  `desktop` (graphical interface, BETA)
+  `reboot`, `gfx` (graphics demo), `panic` (BSOD trigger), `rudod`
+- Utilities: `calc` (expression calculator), `base64`, `sha256`,
+  `echo`, `clear`, `pwd`
+- Networking: `netinfo` (IP/MAC/gateway status), `ping <IPv4>`
+  (ICMP echo via `/dev/net`, e1000 driver, static QEMU user-net
+  config: 10.0.2.15/24 gw 10.0.2.2)
 - libc with `malloc`/`calloc`/`free` over mmap, string functions,
   `print`/`print_num` helpers
 
-### Graphics Interface (BETA)
-- `desktop` command renders a graphical desktop environment with:
-  - Dark background with taskbar
-  - App icon grid with colored accents
-  - System info widgets (memory bar, clock)
-  - Keyboard-driven: press 1-8 to launch demo screens, ESC exits
+### Graphics Interface
+- `gfx` command runs a graphics demo (rects, lines, circles) using the
+  SYS_GFX primitives
 
 ## Layout
 
@@ -86,13 +87,19 @@ kernel/src/
   sys/                 syscall table (33 calls), signals, LAPIC timer, rudo
 userspace/             crt0, libc, init, sh, cat, ls, wc, grep, busy,
                        free, fetch, ps, uptime, date, sleep, reboot,
-                       gfx, panic, rudod, desktop
+                       gfx, panic, rudod, calc, base64, sha256,
+                       echo, clear, pwd, netinfo, ping
 initrd_root/           initrd source tree (etc/, tmp/)
 ```
 
 ## Building
 
+Toolchain: **clang** + **lld** (`ld.lld`), targeting `x86_64-unknown-none-elf`;
+assembly is GAS/AT&T (`.S`) handled by clang's integrated assembler.
+If `ld.lld` is not on PATH, pass e.g. `make CLANG_PREFIX=/c/Program\ Files/LLVM/bin`.
+
 ```sh
+kernel/get-deps      # clone freestanding-c-hdrs + limine-protocol
 make            # kernel
 make userspace  # all userland binaries
 make initrd     # repack boot/initrd.tar
@@ -113,7 +120,8 @@ make clean
 - Filesystem is the RAM-backed initrd (writable, not persisted).
   No block devices yet: AHCI + Ext2 is the next milestone.
 - No PTY layer: single shared console with one foreground process group.
-- `desktop` (BETA): keyboard-driven only, no mouse support.
-  Text rendering in gfx modes limited to colored rectangles.
+- Text rendering in gfx modes limited to colored rectangles.
+- `pwd` always prints `/`: the VFS is a single tree with no per-process
+  working directory yet (relative paths are not resolved).
 - `rudo` auto-approves SETUID requests. Full authentication
   (password/sudoers) is planned.

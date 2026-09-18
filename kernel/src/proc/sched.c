@@ -169,6 +169,7 @@ int sched_spawn_user_task(const char *name, uint64_t pml4_phys,
     t->pml4_phys = pml4_phys;
     t->user_entry = entry;
     t->user_rsp = user_rsp;
+    t->uctx_rflags = 0x202; /* fresh tasks enter user mode with IF set */
 
     strncpy(t->name, name, TASK_NAME_LEN - 1);
 
@@ -223,9 +224,11 @@ static void switch_to(task_t *next) {
     if (prev != NULL) {
         prev->uctx_rip = bsp_cpu.user_rip;
         prev->uctx_rsp = bsp_cpu.user_rsp;
+        prev->uctx_rflags = bsp_cpu.user_rflags;
     }
     bsp_cpu.user_rip = next->uctx_rip;
     bsp_cpu.user_rsp = next->uctx_rsp;
+    bsp_cpu.user_rflags = next->uctx_rflags;
 
     current = next;
     context_switch(prev ? &prev->rsp : NULL, next->rsp);

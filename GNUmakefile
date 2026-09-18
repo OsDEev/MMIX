@@ -1,10 +1,12 @@
-# MyUnix build
-# Requires: gcc/clang, ld, nasm, xorriso (iso), qemu-system-x86_64 (run),
-#           tar (initrd), bear (compdb).
+# MyUnix build (clang + lld)
+# Requires: clang with lld (ld.lld), xorriso (iso),
+#           qemu-system-x86_64 (run), tar (initrd), bear (compdb),
+#           and a POSIX shell for find/sort/cp/tar (Linux, MSYS2, ...).
+# Assembly is GAS/AT&T (.S), assembled by clang's integrated assembler.
 #
 # Targets:
 #   make / make all   - build the kernel (bin/kernel)
-#   make userspace    - build /bin/init (bin/init)
+#   make userspace    - build all userspace binaries (bin/...)
 #   make initrd       - rebuild boot/initrd.tar from initrd_root/ (+ userspace)
 #   make iso          - build the kernel and a bootable ISO
 #   make run          - build ISO and boot it in QEMU (SeaBIOS)
@@ -15,28 +17,35 @@
 
 .SUFFIXES:
 
+# Keep intermediate object files (built via implicit rules) so that
+# incremental builds don't rebuild everything on every run.
+.SECONDARY:
+
 override OUTPUT := kernel
 ARCH := x86_64
 
-# Toolchain prefix (change if using a cross-compiler)
-TOOLCHAIN_PREFIX :=
-CC := $(TOOLCHAIN_PREFIX)gcc
-LD := $(TOOLCHAIN_PREFIX)ld
-NASM := nasm
+# LLVM toolchain. If ld.lld is not on PATH, point CLANG_PREFIX at LLVM's
+# bin/ directory, e.g.  make CLANG_PREFIX=/c/Program\ Files/LLVM/bin
+CLANG_PREFIX ?=
+CC := $(CLANG_PREFIX)clang
+LD := $(CLANG_PREFIX)ld.lld
+
+# Bare-metal x86-64 ELF target: no libc or target headers, System V ABI.
+TARGET_TRIPLE := x86_64-unknown-none-elf
+TARGET_FLAG := --target=$(TARGET_TRIPLE)
 
 # === User-controllable flags ===
 CFLAGS_USER := -g -O2 -pipe
 LDFLAGS_USER :=
-NASMFLAGS_USER := -g
 
-# === Internal kernel C flags (DO NOT REMOVE) ===
+# === Internal kernel C/asm flags (DO NOT REMOVE) ===
 override KCFLAGS := \
     $(CFLAGS_USER) \
+    $(TARGET_FLAG) \
     -Wall -Wextra -Werror \
     -std=gnu11 \
     -ffreestanding \
     -fno-stack-protector \
-    -fno-stack-check \
     -fno-lto \
     -fno-PIC \
     -fno-pie \
@@ -44,7 +53,6 @@ override KCFLAGS := \
     -fdata-sections \
     -m64 \
     -march=x86-64 \
-    -mabi=sysv \
     -mno-80387 \
     -mno-mmx \
     -mno-sse \
@@ -68,6 +76,7 @@ override KCPPFLAGS := \
     -I kernel/src/fs \
     -I kernel/src/sys \
     -I kernel/src/drivers \
+    -I kernel/src/drivers/usb \
     -MMD -MP
 
 # === Internal linker flags ===
@@ -77,28 +86,22 @@ override KLDFLAGS := \
     -static \
     -z max-page-size=0x1000 \
     --gc-sections \
-    -T kernel/linker.ld \
-    -m elf_x86_64
+    -T kernel/linker.ld
 
 # === Userspace flags (ring 3 binaries, linked at low VA) ===
-override UCFLAGS := $(CFLAGS_USER) -Wall -Wextra -std=gnu11 \
+override UCFLAGS := $(CFLAGS_USER) $(TARGET_FLAG) -Wall -Wextra -std=gnu11 \
     -ffreestanding -fno-stack-protector -fno-pie -fno-lto \
     -mno-mmx -mno-sse -mno-sse2 -mno-80387
-override ULDFLAGS := -nostdlib -static -no-pie -z max-page-size=0x1000 \
-    -T userspace/linker.ld
-
-# === NASM flags ===
-override NASMFLAGS := $(NASMFLAGS_USER) -f elf64 -Wall -F dwarf
+override ULDFLAGS := $(LDFLAGS_USER) -nostdlib -static -no-pie \
+    -z max-page-size=0x1000 -T userspace/linker.ld
 
 # === Source discovery ===
 override CFILES := $(shell find kernel -name '*.c' 2>/dev/null | LC_ALL=C sort)
 override ASFILES := $(shell find kernel -name '*.S' 2>/dev/null | LC_ALL=C sort)
-override NASMFILES := $(shell find kernel -name '*.asm' 2>/dev/null | LC_ALL=C sort)
 
 override OBJ := \
     $(patsubst %.c,obj/%.c.o,$(CFILES)) \
-    $(patsubst %.S,obj/%.S.o,$(ASFILES)) \
-    $(patsubst %.asm,obj/%.asm.o,$(NASMFILES))
+    $(patsubst %.S,obj/%.S.o,$(ASFILES))
 
 override DEPS := $(OBJ:.o=.d)
 
@@ -116,18 +119,13 @@ obj/%.c.o: %.c
 	@mkdir -p "$(dir $@)"
 	$(CC) $(KCFLAGS) $(KCPPFLAGS) -c $< -o $@
 
-# === Compile ASM (GAS) ===
+# === Compile ASM (GAS/AT&T via clang's integrated assembler) ===
 obj/%.S.o: %.S
 	@mkdir -p "$(dir $@)"
 	$(CC) $(KCFLAGS) $(KCPPFLAGS) -c $< -o $@
 
-# === Compile ASM (NASM) ===
-obj/%.asm.o: %.asm
-	@mkdir -p "$(dir $@)"
-	$(NASM) $(NASMFLAGS) $< -o $@
-
 # === Userspace ===
-USERSPACE_PROGS := init sh cat ls wc grep busy free fetch ps uptime date sleep reboot gfx panic rudod desktop
+USERSPACE_PROGS := init sh cat ls wc grep busy free fetch ps uptime date sleep reboot gfx panic rudod calc base64 sha256 echo clear pwd sound netinfo ping
 USERSPACE_BINS := $(addprefix bin/,$(USERSPACE_PROGS))
 
 .PHONY: userspace
@@ -148,7 +146,7 @@ obj/userspace/%/app.c.o: userspace/%.c
 
 bin/%: obj/userspace/%/crt0.S.o obj/userspace/%/app.c.o obj/userspace/%/libc.c.o userspace/linker.ld
 	@mkdir -p "$(dir $@)"
-	$(CC) $(UCFLAGS) $(ULDFLAGS) \
+	$(LD) $(ULDFLAGS) \
 	    obj/userspace/$*/crt0.S.o obj/userspace/$*/app.c.o obj/userspace/$*/libc.c.o -o $@
 
 # === Initrd ===
@@ -172,7 +170,7 @@ boot/initrd.tar: $(INITRD_FILES) userspace
 
 # === Build bootable ISO ===
 .PHONY: iso
-iso: bin/$(OUTPUT)
+iso: bin/$(OUTPUT) boot/initrd.tar
 	@mkdir -p iso_root/boot iso_root/EFI/BOOT
 	@cp bin/$(OUTPUT) iso_root/boot/kernel.elf
 	@cp boot/limine.conf iso_root/boot/
@@ -194,11 +192,14 @@ iso: bin/$(OUTPUT)
 # === Run in QEMU ===
 .PHONY: run
 run: iso
-	qemu-system-x86_64 -enable-kvm -m 512M -serial stdio -cdrom myunix.iso
+	qemu-system-x86_64 -enable-kvm -m 512M -serial stdio \
+	    -audiodev wav,id=snd0,path=audio-out.wav -device sb16,audiodev=snd0 \
+	    -cdrom myunix.iso
 
 .PHONY: run-uefi
 run-uefi: iso
 	qemu-system-x86_64 -enable-kvm -m 512M -serial stdio \
+	    -audiodev wav,id=snd0,path=audio-out.wav -device sb16,audiodev=snd0 \
 	    -bios /usr/share/OVMF/OVMF_CODE.fd -cdrom myunix.iso
 
 # === Clean ===

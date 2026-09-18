@@ -39,6 +39,7 @@ static int csi_count;
 static int csi_cur = -1;
 
 static void draw_pixel(int px, int py, uint32_t color) {
+    if (px < 0 || py < 0 || (uint32_t)px >= mode_w || (uint32_t)py >= mode_h) return;
     volatile uint32_t *p =
         (volatile uint32_t *)(fb + py * pitch + px * (bpp / 8));
     *p = color;
@@ -234,11 +235,9 @@ static void tty_ansi_feed(char c) {
     ansi_state = 0;
 }
 
-void tty_putc(char c) {
-    /* Serial mirror: keep headless runs informative. */
-    if (c == '\n') outb(COM1, '\r');
-    outb(COM1, (uint8_t)c);
-
+/* Draw a single character to the framebuffer console (no serial mirror;
+ * used to echo kernel/kprintf output onto the PC screen as well). */
+void tty_screen_putc(char c) {
     if (fb == NULL) return;
 
     if (c == 0x1B) { ansi_state = 1; return; }
@@ -279,6 +278,14 @@ void tty_putc(char c) {
     }
 
     show_cursor();
+}
+
+void tty_putc(char c) {
+    /* Serial mirror: keep headless runs informative. */
+    if (c == '\n') outb(COM1, '\r');
+    outb(COM1, (uint8_t)c);
+
+    tty_screen_putc(c);
 }
 
 void tty_write(const char *buf, size_t n) {

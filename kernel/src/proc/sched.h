@@ -64,6 +64,7 @@ typedef struct task {
     uint64_t rsp;        /* kernel rsp at last switch */
     uint64_t uctx_rip;   /* saved user context (mirrors bsp_cpu slots) */
     uint64_t uctx_rsp;
+    uint64_t uctx_rflags;
 
     /* Kernel stack */
     void *kstack;

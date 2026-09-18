@@ -10,6 +10,7 @@
 #include <lapic.h>
 #include <libk.h>
 #include <limine.h>
+#include <fpu.h>
 #include <pmap.h>
 #include <pmm.h>
 #include <sched.h>
@@ -20,10 +21,14 @@
 #include <vfs.h>
 #include <mouse.h>
 #include <pci.h>
+#include <uhci.h>
 #include <ahci.h>
 #include <blockdev.h>
 #include <partition.h>
 #include <ext2.h>
+#include <audio.h>
+#include "net/e1000.h"
+#include "net/net.h"
 
 #include "elf.h"
 
@@ -100,6 +105,11 @@ void _start(void) {
     gdt_init();
     idt_init();
 
+    /* FPU/SSE: real hardware may boot with CR0.EM/TS set, which makes any
+     * MMX/SSE/runtime op raise #NM. Enable the unit early. */
+    fpu_init();
+    kprintf("[FPU] Enabled x87 + SSE\n");
+
     /* Syscalls + per-CPU data */
     syscall_init();
 
@@ -130,6 +140,11 @@ void _start(void) {
     vfs_init();
     devfs_init();
     vfs_mount_procfs();
+
+    /* Sound Blaster 16 -> /dev/audio (no PCI needed, ISA fixed ports). */
+    audio_init();
+
+    /* Network: e1000 NIC (PCI). Stack init happens after pci_init(). */
     bool have_initrd = false;
     if (module_request.response != NULL && module_request.response->module_count > 0) {
         struct limine_file *initrd = module_request.response->modules[0];
@@ -142,6 +157,11 @@ void _start(void) {
     /* === Storage subsystem === */
     blockdev_init();
     pci_init();
+    e1000_init();
+    net_init();
+
+    /* USB host controllers (UHCI); attaches an HID boot keyboard. */
+    uhci_init();
 
     if (ahci_init()) {
         kprintf("[BOOT] Storage initialized\n");

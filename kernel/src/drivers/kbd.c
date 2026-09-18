@@ -96,6 +96,11 @@ void kbd_interrupt(void) {
     buf_push(c);
 }
 
+/* USB keyboard input: queues a character through the same ring buffer. */
+void kbd_usb_push(char c) {
+    buf_push(c);
+}
+
 bool kbd_poll(char *out) {
     if (kb_head == kb_tail) return false;
     *out = kb_buf[kb_tail];

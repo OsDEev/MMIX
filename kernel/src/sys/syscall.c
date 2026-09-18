@@ -243,7 +243,12 @@ static int64_t sys_execve(uint64_t path_ptr, uint64_t argv_ptr, uint64_t a3,
     const char *path = (const char *)path_ptr;
     char **user_argv = (char **)argv_ptr;
 
+    kprintf("[EXEC] sys_execve path=%s pid=%d\n", path ? path : "(null)",
+            cur ? cur->pid : -1);
     if (path == NULL) return -1;
+
+    kprintf("[EXEC] pid=%d path=%s argc=%d\n", cur->pid, path,
+            user_argv ? (int)(argv_ptr ? 1 : 0) : 0);
 
     /* Copy argv from user memory into kernel buffers. */
     char *argv_copy[EXEC_MAX_ARGS + 1];
@@ -261,7 +266,12 @@ static int64_t sys_execve(uint64_t path_ptr, uint64_t argv_ptr, uint64_t a3,
     argv_copy[argc] = NULL;
 
     struct exec_image img;
-    if (exec_build_image(path, argv_copy, &img) != 0) return -1;
+    if (exec_build_image(path, argv_copy, &img) != 0) {
+        kprintf("[EXEC] exec_build_image FAILED for %s\n", path);
+        return -1;
+    }
+    kprintf("[EXEC] exec_build_image OK entry=%lx rsp=%lx\n",
+            (unsigned long)img.entry, (unsigned long)img.user_rsp);
 
     uint64_t old_pml4 = cur->pml4_phys;
 
@@ -279,12 +289,14 @@ static int64_t sys_execve(uint64_t path_ptr, uint64_t argv_ptr, uint64_t a3,
 
     bsp_cpu.user_rsp = img.user_rsp;
     bsp_cpu.user_rip = img.entry;
+    bsp_cpu.user_rflags = 0x202; /* exec starts fresh: RFLAGS with IF */
 
 
     __asm__ volatile(
         "movabs $bsp_cpu, %%rsi \n"
         "mov 8(%%rsi), %%rsp    \n"   /* CPU_USER_RSP */
         "mov 16(%%rsi), %%rcx   \n"   /* CPU_USER_RIP */
+        "mov 24(%%rsi), %%r11   \n"   /* CPU_USER_RFLAGS */
         ".byte 0x48; sysret     \n"
         :
         :
@@ -460,6 +472,9 @@ static int64_t sys_write(uint64_t fd, uint64_t buf_ptr, uint64_t count,
     /* Character device */
     if (f->node != NULL && f->node->type == VFS_CHARDEV) {
         struct chardev *cd = (struct chardev *)f->node->dev;
+        if (cd && count > 256)
+            kprintf("[WRITE] chardev '%s' pid=%d count=%u\n",
+                    cd->name ? cd->name : "?", cur->pid, (unsigned)count);
         return cd ? cd->write(buf, count) : -1;
     }
 
@@ -468,6 +483,9 @@ static int64_t sys_write(uint64_t fd, uint64_t buf_ptr, uint64_t count,
     }
 
     if (f->flags & FDF_CONSOLE_OUT) {
+        if (count > 4096)
+            kprintf("[WRITE] BIG console write pid=%d count=%u\n",
+                    cur->pid, (unsigned)count);
         tty_write(buf, count);
         return (int64_t)count;
     }
@@ -1034,7 +1052,7 @@ static int64_t sys_uname(uint64_t buf_ptr, uint64_t a2, uint64_t a3,
     (void)a2; (void)a3; (void)a4; (void)a5; (void)a6;
     char *buf = (char *)buf_ptr;
     if (buf == NULL) return -1;
-    const char *info = "MMix 0.5.0 x86_64";
+    const char *info = "MMix 0.6.0 x86_64";
     memcpy(buf, info, strlen(info) + 1);
     return 0;
 }
@@ -1161,9 +1179,20 @@ void syscall_init(void) {
     efer |= EFER_SCE;
     wrmsr(MSR_EFER, efer);
 
-    /* IA32_STAR: kernel CS/SS in bits 47:32, user CS/SS in bits 63:48 */
+    /*
+     * IA32_STAR.  For SYSCALL the CPU loads CS/SS as-is from bits 47:32
+     * (kernel code at 0x08, kernel data at 0x10 by the +8 rule on the
+     * entry side), so STAR[47:32] = GDT_KERNEL_CODE.
+     *
+     * On SYSRET the CPU loads SS = STAR[63:48] + 8 and CS = STAR[63:48]
+     * + 16, so the base must be GDT_KERNEL_DATA (0x10): that resolves to
+     * user data 0x18 / user code 0x20 in the current GDT.  Passing a user
+     * selector here produced CS 0x2B (the TSS descriptor at 0x28), which
+     * passed sysret but #GP'd on the first iretq from an interrupt.
+     */
     wrmsr(MSR_STAR,
-          ((uint64_t)GDT_KERNEL_CODE << 32) | ((uint64_t)GDT_USER_CODE << 48));
+          ((uint64_t)GDT_KERNEL_CODE << 32) |
+          ((uint64_t)GDT_KERNEL_DATA << 48));
 
     /* IA32_LSTAR: syscall entry point */
     extern void syscall_entry(void);
